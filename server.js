@@ -22,13 +22,6 @@ const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || '';
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
 
 const db = store.load();
-// If WEBHOOK_SECRET is set in the environment, it always wins - this keeps
-// the IFTTT applet's URL stable across redeploys even if data/store.json
-// itself doesn't survive (e.g. a host that resets untracked files on deploy).
-if (process.env.WEBHOOK_SECRET) {
-  db.webhookSecret = process.env.WEBHOOK_SECRET;
-  store.save();
-}
 const router = new Router();
 
 // ---------------------------------------------------------------------------
@@ -169,32 +162,8 @@ function refreshStatuses() {
   if (changed) store.save();
 }
 
-function parseAmountFromText(text) {
-  const match = String(text || '').match(/(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i);
-  return match ? parseFloat(match[1].replace(/,/g, '')) : null;
-}
-
 function toTitleCase(s) {
   return String(s).trim().replace(/\s+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-}
-
-// Best-effort sender-name extraction from common GPay/PhonePe/Paytm/bank SMS
-// notification wordings. Falls back to null if nothing matches.
-function parseNameFromText(text) {
-  const t = String(text || '').trim();
-  const patterns = [
-    /^([A-Za-z][A-Za-z.\s]{1,40}?)\s+paid you/i,               // "John Doe paid you ₹499"
-    /(?:received|credited)[^a-zA-Z]*(?:from|frm)\s+([A-Za-z][A-Za-z.\s]{1,40}?)(?:\s+(?:via|using|on|towards|for|to|UPI|Ref|A\/c)\b|[.,]|$)/i,
-    /\bfrom\s+([A-Za-z][A-Za-z.\s]{1,40}?)(?:\s+(?:via|using|on|towards|for|to|UPI|Ref|A\/c)\b|[.,]|$)/i
-  ];
-  for (const re of patterns) {
-    const m = t.match(re);
-    if (m) {
-      const name = m[1].trim().replace(/\s+/g, ' ');
-      if (name.length >= 2) return toTitleCase(name);
-    }
-  }
-  return null;
 }
 
 // Pulls the payer name + paid amount (in rupees) out of a Razorpay
@@ -541,7 +510,7 @@ function getAllOrders() {
 }
 
 // Renders a standalone, print-ready Tax Invoice page for one order. Works
-// for every order (self-placed, offline, IFTTT, or Razorpay) since it's
+// for every order (self-placed, offline, or Razorpay) since it's
 // looked up from the admin's own aggregate view rather than a customer
 // session - the auto/synthetic accounts webhooks create have no real login,
 // so this is the only way to ever see their invoice.
@@ -661,51 +630,17 @@ router.get('/api/admin/orders/export.csv', async (req, res) => {
   res.end(csv);
 });
 
-// Owner-facing endpoint to fetch the webhook URL + secret so it's easy to
-// copy into an IFTTT applet (or Razorpay's webhook settings) from the
-// dashboard itself.
+// Owner-facing endpoint to fetch the Razorpay webhook secret, in case it's
+// still running in query-secret testing mode (no RAZORPAY_WEBHOOK_SECRET set).
 router.get('/api/admin/webhook-info', async (req, res) => {
   if (!isAdmin(req)) return sendJson(res, 401, { error: 'Admin login required.' });
-  sendJson(res, 200, { secret: db.webhookSecret, razorpaySecret: db.razorpaySecret });
-});
-
-// ---------------------------------------------------------------------------
-// IFTTT webhook: Android "Notifications" trigger -> "Webhooks" action posts
-// here whenever a matching bank/UPI notification appears on the owner's phone.
-// ---------------------------------------------------------------------------
-router.post('/api/webhook/bank-notification', async (req, res) => {
-  const parsed = url.parse(req.url, true);
-  const secret = parsed.query.secret || req.headers['x-webhook-secret'];
-  if (secret !== db.webhookSecret) return sendJson(res, 401, { error: 'Invalid or missing webhook secret.' });
-
-  const body = await readJsonBody(req);
-  const text = String(body.text || body.value1 || '').trim(); // value1 = IFTTT's default ingredient name
-  const amount = parseAmountFromText(text);
-  if (!amount) return sendJson(res, 400, { error: 'Could not find a rupee amount in the notification text.', text });
-
-  const name = parseNameFromText(text) || 'UPI Customer';
-  const user = findOrCreateAutoUser(name);
-
-  const order = {
-    orderId: 'LM-WH' + Date.now().toString().slice(-6),
-    orderDate: new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-    createdAt: Date.now(),
-    address: randomAddress(),
-    items: [{ name: 'UPI Payment: ' + text.slice(0, 80), qty: 1, price: amount }],
-    subtotal: amount, tax: 0, delivery: 0, grandTotal: amount,
-    deliverAt: Date.now() + DELIVERY_WAIT_MS,
-    status: 'Processing', offline: false, source: 'ifttt-webhook'
-  };
-  user.orders.push(order);
-  store.save();
-  sendJson(res, 200, { ok: true, amount, name: user.name, email: user.email, orderId: order.orderId });
+  sendJson(res, 200, { razorpaySecret: db.razorpaySecret });
 });
 
 // ---------------------------------------------------------------------------
 // Razorpay webhook: fires on `payment.captured` - turns a real payment into
 // an auto-attributed customer order with catalog products matching the paid
-// amount. Runs alongside the IFTTT bank-notification webhook above, not
-// instead of it.
+// amount.
 // ---------------------------------------------------------------------------
 router.post('/api/webhook/razorpay-payment', async (req, res) => {
   const raw = await readRawBody(req);
@@ -815,8 +750,6 @@ setInterval(refreshStatuses, 15_000);
 server.listen(PORT, () => {
   console.log(`\nLeela Mart backend running at http://localhost:${PORT}`);
   console.log(`Owner login: ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
-  console.log(`IFTTT webhook secret: ${db.webhookSecret}`);
-  console.log(`IFTTT webhook URL: https://<your-domain>/api/webhook/bank-notification?secret=${db.webhookSecret}`);
   if (process.env.RAZORPAY_WEBHOOK_SECRET) {
     console.log(`Razorpay webhook URL (signature-verified): https://<your-domain>/api/webhook/razorpay-payment`);
   } else {

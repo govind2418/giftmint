@@ -168,8 +168,6 @@
   .stat-num{font-size:20px;font-weight:800;color:var(--primary-dark);}
   .stat-label{font-size:11px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.4px;}
 .loading-note{padding:60px;text-align:center;color:var(--muted);grid-column:1/-1;}
-  .webhook-box{background:#f7f3ff;border:1px dashed var(--primary);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12.5px;}
-  .webhook-box code{background:#fff;padding:2px 6px;border-radius:4px;border:1px solid #ddd;word-break:break-all;}
 </style>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
@@ -754,9 +752,6 @@ async function adminLogout(){
 }
 async function renderAdminDashboard(){
   const { orders, stats } = await api('/api/admin/orders');
-  let webhookSecret = '';
-  try{ const info = await api('/api/admin/webhook-info'); webhookSecret = info.secret; } catch(e){}
-  const webhookUrl = `${window.location.origin}/api/webhook/bank-notification?secret=${webhookSecret}`;
 
   const rowsHtml = orders.length === 0
     ? `<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--muted);">No orders yet.</td></tr>`
@@ -780,10 +775,6 @@ async function renderAdminDashboard(){
         <div class="stat-card"><div class="stat-num">₹${stats.totalRevenue.toLocaleString('en-IN')}</div><div class="stat-label">Total Revenue</div></div>
         <div class="stat-card"><div class="stat-num">${stats.totalCustomers}</div><div class="stat-label">Customers</div></div>
         <div class="stat-card"><div class="stat-num">${stats.processingCount} / ${stats.deliveredCount}</div><div class="stat-label">Processing / Delivered</div></div>
-      </div>
-      <div class="webhook-box">
-        <strong>IFTTT webhook URL</strong> (use this as the Webhooks action URL, method POST, JSON body <code>{"text":"{{NotificationContent}}"}</code>):<br>
-        <code>${webhookUrl}</code>
       </div>
       <div style="overflow-x:auto;">
         <table class="invoice-table"><thead><tr><th>Order ID</th><th>Customer</th><th>Date</th><th>Items</th><th>Amount</th><th>Source</th><th>Status</th><th>Invoice</th></tr></thead><tbody>${rowsHtml}</tbody></table>
