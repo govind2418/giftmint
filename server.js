@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
+const crypto = require('crypto');
 
 const Router = require('./lib/router');
 const store = require('./lib/store');
@@ -51,6 +52,31 @@ function readJsonBody(req) {
     });
     req.on('error', reject);
   });
+}
+
+// Like readJsonBody, but hands back the raw string too - needed for Razorpay
+// signature verification, which is computed over the exact bytes received.
+function readRawBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', chunk => {
+      data += chunk;
+      if (data.length > 2_000_000) {
+        reject(new Error('Body too large'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => resolve(data));
+    req.on('error', reject);
+  });
+}
+
+function verifyRazorpaySignature(rawBody, signatureHeader, secret) {
+  if (!signatureHeader) return false;
+  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+  const a = Buffer.from(signatureHeader, 'hex');
+  const b = Buffer.from(expected, 'hex');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 function findUserByToken(token) {
@@ -143,6 +169,10 @@ function parseAmountFromText(text) {
   return match ? parseFloat(match[1].replace(/,/g, '')) : null;
 }
 
+function toTitleCase(s) {
+  return String(s).trim().replace(/\s+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 // Best-effort sender-name extraction from common GPay/PhonePe/Paytm/bank SMS
 // notification wordings. Falls back to null if nothing matches.
 function parseNameFromText(text) {
@@ -156,10 +186,50 @@ function parseNameFromText(text) {
     const m = t.match(re);
     if (m) {
       const name = m[1].trim().replace(/\s+/g, ' ');
-      if (name.length >= 2) {
-        return name.replace(/\b\w/g, c => c.toUpperCase());
-      }
+      if (name.length >= 2) return toTitleCase(name);
     }
+  }
+  return null;
+}
+
+// Pulls the payer name + paid amount (in rupees) out of a Razorpay
+// `payment.captured` webhook payload. Also accepts a flat {name, amount}
+// body so the flow can be smoke-tested with curl before Razorpay is wired up.
+function extractRazorpayPaymentDetails(body) {
+  const entity = body && body.payload && body.payload.payment && body.payload.payment.entity;
+  if (entity) {
+    const amount = typeof entity.amount === 'number' ? entity.amount / 100 : null;
+    const notesName = entity.notes && (entity.notes.name || entity.notes.customer_name);
+    const emailName = entity.email ? entity.email.split('@')[0].replace(/[._]+/g, ' ') : null;
+    const name = notesName || emailName || null;
+    return { amount, name: name ? toTitleCase(name) : null, event: body.event || null };
+  }
+  if (body && body.amount != null) {
+    return { amount: Number(body.amount), name: body.name ? toTitleCase(body.name) : null, event: 'manual' };
+  }
+  return { amount: null, name: null, event: null };
+}
+
+// Picks real catalog product(s) whose price adds up exactly to the amount
+// paid, so a Razorpay payment turns into a genuine-looking order instead of
+// a generic placeholder line item. Falls back to null if no single product
+// or pair of products matches.
+function findMatchingProducts(amount) {
+  const target = Math.round(amount);
+  const exactSingles = products.filter(p => p.price === target);
+  if (exactSingles.length) {
+    const p = exactSingles[Math.floor(Math.random() * exactSingles.length)];
+    return [{ id: p.id, name: p.name, price: p.price, qty: 1 }];
+  }
+  const pairs = [];
+  for (let i = 0; i < products.length; i++) {
+    for (let j = i + 1; j < products.length; j++) {
+      if (products[i].price + products[j].price === target) pairs.push([products[i], products[j]]);
+    }
+  }
+  if (pairs.length) {
+    const pair = pairs[Math.floor(Math.random() * pairs.length)];
+    return pair.map(p => ({ id: p.id, name: p.name, price: p.price, qty: 1 }));
   }
   return null;
 }
@@ -393,10 +463,11 @@ router.get('/api/admin/orders/export.csv', async (req, res) => {
 });
 
 // Owner-facing endpoint to fetch the webhook URL + secret so it's easy to
-// copy into an IFTTT applet from the dashboard itself.
+// copy into an IFTTT applet (or Razorpay's webhook settings) from the
+// dashboard itself.
 router.get('/api/admin/webhook-info', async (req, res) => {
   if (!isAdmin(req)) return sendJson(res, 401, { error: 'Admin login required.' });
-  sendJson(res, 200, { secret: db.webhookSecret });
+  sendJson(res, 200, { secret: db.webhookSecret, razorpaySecret: db.razorpaySecret });
 });
 
 // ---------------------------------------------------------------------------
@@ -429,6 +500,68 @@ router.post('/api/webhook/bank-notification', async (req, res) => {
   user.orders.push(order);
   store.save();
   sendJson(res, 200, { ok: true, amount, name: user.name, email: user.email, orderId: order.orderId });
+});
+
+// ---------------------------------------------------------------------------
+// Razorpay webhook: fires on `payment.captured` - turns a real payment into
+// an auto-attributed customer order with catalog products matching the paid
+// amount. Runs alongside the IFTTT bank-notification webhook above, not
+// instead of it.
+// ---------------------------------------------------------------------------
+router.post('/api/webhook/razorpay-payment', async (req, res) => {
+  const raw = await readRawBody(req);
+  let body;
+  try { body = raw ? JSON.parse(raw) : {}; }
+  catch (e) { return sendJson(res, 400, { error: 'Invalid JSON body' }); }
+
+  const RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
+  if (RAZORPAY_WEBHOOK_SECRET) {
+    // Production path: verify the HMAC-SHA256 signature Razorpay sends in
+    // the X-Razorpay-Signature header, signed with the secret configured in
+    // the Razorpay dashboard's webhook settings.
+    const signature = req.headers['x-razorpay-signature'];
+    if (!verifyRazorpaySignature(raw, signature, RAZORPAY_WEBHOOK_SECRET)) {
+      return sendJson(res, 401, { error: 'Invalid Razorpay signature.' });
+    }
+  } else {
+    // No production secret configured yet - fall back to a shared-secret
+    // query param so this can be smoke-tested with curl before Razorpay is
+    // wired up for real.
+    const parsed = url.parse(req.url, true);
+    if (parsed.query.secret !== db.razorpaySecret) {
+      return sendJson(res, 401, { error: 'Invalid or missing webhook secret.' });
+    }
+  }
+
+  const details = extractRazorpayPaymentDetails(body);
+  if (body.event && details.event !== 'manual' && body.event !== 'payment.captured') {
+    return sendJson(res, 200, { ok: true, ignored: true, event: body.event });
+  }
+  if (!details.amount || details.amount <= 0) {
+    return sendJson(res, 400, { error: 'Could not find a valid payment amount.', body });
+  }
+
+  const name = details.name || 'Razorpay Customer';
+  const user = findOrCreateAutoUser(name);
+  const items = findMatchingProducts(details.amount) ||
+    [{ id: 0, name: `Razorpay Payment (₹${details.amount})`, price: details.amount, qty: 1 }];
+  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+
+  const order = {
+    orderId: 'LM-RP' + Date.now().toString().slice(-6),
+    orderDate: new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+    createdAt: Date.now(),
+    address: randomAddress(),
+    items, subtotal, tax: 0, delivery: 0, grandTotal: subtotal,
+    deliverAt: Date.now() + DELIVERY_WAIT_MS,
+    status: 'Processing', offline: false, source: 'razorpay-webhook'
+  };
+  user.orders.push(order);
+  store.save();
+  sendJson(res, 200, {
+    ok: true, amount: details.amount, name: user.name, email: user.email,
+    orderId: order.orderId, items: items.map(i => i.name)
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -484,5 +617,13 @@ server.listen(PORT, () => {
   console.log(`\nLeela Mart backend running at http://localhost:${PORT}`);
   console.log(`Owner login: ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
   console.log(`IFTTT webhook secret: ${db.webhookSecret}`);
-  console.log(`Webhook URL (once you expose this with ngrok): https://<your-ngrok-domain>/api/webhook/bank-notification?secret=${db.webhookSecret}\n`);
+  console.log(`IFTTT webhook URL: https://<your-domain>/api/webhook/bank-notification?secret=${db.webhookSecret}`);
+  if (process.env.RAZORPAY_WEBHOOK_SECRET) {
+    console.log(`Razorpay webhook URL (signature-verified): https://<your-domain>/api/webhook/razorpay-payment`);
+  } else {
+    console.log(`Razorpay webhook secret (testing only, no signature check yet): ${db.razorpaySecret}`);
+    console.log(`Razorpay test webhook URL: https://<your-domain>/api/webhook/razorpay-payment?secret=${db.razorpaySecret}`);
+    console.log(`Set RAZORPAY_WEBHOOK_SECRET env var once Razorpay is wired up for real (enables signature verification).`);
+  }
+  console.log('');
 });
