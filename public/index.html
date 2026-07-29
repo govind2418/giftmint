@@ -121,6 +121,15 @@
   .status-processing{background:#fff3e0;color:#e65100;}
   .status-processing .dot{background:#e65100;}
 
+  /* Printing the invoice should only print the invoice, not the whole
+     storefront page sitting behind the modal. */
+  @media print{
+    body > *:not(#invoiceOverlay){display:none!important;}
+    #invoiceOverlay{position:static!important;background:none!important;padding:0!important;display:block!important;}
+    #invoiceBox{max-height:none!important;overflow:visible!important;box-shadow:none!important;margin:0 auto;}
+    .invoice-footer{display:none!important;}
+  }
+
   /* Order tracker widget */
   .order-tracker{position:fixed;bottom:18px;right:18px;background:#fff;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.22);padding:12px 16px;display:none;align-items:center;gap:10px;cursor:pointer;z-index:250;border:1px solid #eee;}
   .order-tracker.show{display:flex;}
