@@ -151,14 +151,8 @@ function extractRazorpayPaymentDetails(body) {
 }
 
 // Builds a realistic "shopping basket" of real catalog products (any mix,
-// any quantities) that fills up to the amount actually paid, so a Razorpay
-// payment always turns into a genuine-looking order - never a generic
-// placeholder line item. The paid amount already includes 18% GST + Rs.100
-// delivery, so we first back those out to get the product-only budget.
-function pickProductsForAmount(amount) {
-  const cheapestPrice = products.reduce((min, p) => Math.min(min, p.price), Infinity);
-  const targetSubtotal = Math.max(cheapestPrice, Math.round((amount - DELIVERY_FEE) / (1 + TAX_RATE)));
-
+// any quantities) that fills up to a target subtotal.
+function fillBasket(targetSubtotal, cheapestPrice) {
   const shuffled = [...products].sort(() => Math.random() - 0.5);
   const basket = [];
   let remaining = targetSubtotal;
@@ -170,29 +164,39 @@ function pickProductsForAmount(amount) {
     remaining -= p.price * qty;
     if (remaining < cheapestPrice) break;
   }
-  if (basket.length === 0) {
-    const cheapest = products.find(p => p.price === cheapestPrice);
-    basket.push({ id: cheapest.id, name: cheapest.name, price: cheapest.price, qty: 1 });
-  }
   return basket;
 }
 
-// Turns a captured payment amount into a priced order: picks real products
-// for it, then reconciles subtotal/tax/delivery so they always add up to
-// exactly what was actually paid (the real money received is the source of
-// truth, the basket is just a realistic explanation of it).
+// Turns a captured payment amount into a priced order that always sums to
+// exactly that amount - the real money received is the only source of
+// truth, never something the catalog/GST math is allowed to drift from.
+//
+// When the amount is big enough to plausibly include 18% GST + Rs.100
+// delivery on top of at least one real product, it fills a realistic
+// basket and reconciles tax to make the total exact. When it's too small
+// for that (e.g. a Rs.11 UPI payment, cheaper than any single catalog
+// item), there's no honest way to add tax/delivery on top - instead it
+// picks the closest-priced real product and prices that one line item at
+// exactly what was paid, as if it sold at a discount.
 function priceWebhookOrder(amount) {
-  const items = pickProductsForAmount(amount);
-  const basketSubtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
-  let delivery = DELIVERY_FEE;
-  let tax = Math.round(amount - basketSubtotal - delivery);
-  if (tax < 0) {
-    // Amount too small to cover the standard delivery fee on top of this
-    // basket - drop delivery/tax rather than show a negative number.
-    delivery = 0;
-    tax = Math.max(0, Math.round(amount - basketSubtotal));
+  const cheapestPrice = products.reduce((min, p) => Math.min(min, p.price), Infinity);
+  const targetSubtotal = Math.round((amount - DELIVERY_FEE) / (1 + TAX_RATE));
+
+  if (targetSubtotal >= cheapestPrice) {
+    const items = fillBasket(targetSubtotal, cheapestPrice);
+    const basketSubtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+    const delivery = DELIVERY_FEE;
+    const tax = Math.max(0, Math.round(amount - basketSubtotal - delivery));
+    return { items, subtotal: basketSubtotal, tax, delivery, grandTotal: basketSubtotal + tax + delivery };
   }
-  return { items, subtotal: basketSubtotal, tax, delivery, grandTotal: basketSubtotal + tax + delivery };
+
+  // Too small for a normal GST + delivery breakdown - sell one real
+  // product "at a discount" for exactly the amount paid instead.
+  const closest = products.reduce((a, b) => Math.abs(a.price - amount) < Math.abs(b.price - amount) ? a : b);
+  return {
+    items: [{ id: closest.id, name: closest.name, price: amount, qty: 1 }],
+    subtotal: amount, tax: 0, delivery: 0, grandTotal: amount
+  };
 }
 
 // Finds (or auto-creates) a user account under the payer's name so the
