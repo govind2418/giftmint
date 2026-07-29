@@ -1,10 +1,15 @@
 {
   "name": "leela-mart-backend",
   "version": "1.0.0",
-  "description": "Leela Mart - college demo e-commerce backend with owner dashboard and IFTTT bank-notification webhook. Zero external dependencies - pure Node.js.",
+  "description": "Leela Mart - college demo e-commerce backend with owner dashboard and Razorpay payments. MySQL-backed persistence.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
-  "engines": { "node": ">=16" }
+  "engines": {
+    "node": ">=16"
+  },
+  "dependencies": {
+    "mysql2": "^3.23.2"
+  }
 }

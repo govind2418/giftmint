@@ -1,21 +1,21 @@
 # Leela Mart — Backend
 
-A real Node.js backend for the Leela Mart college-project demo. No external
-npm packages required (pure built-in Node modules), so `npm install` has
-nothing to download — it just works.
-
-It replaces the old "everything lives in browser memory" version: users,
-orders and offline payments now persist in `data/store.json` on disk, so
-they survive page reloads and browser restarts.
+A real Node.js backend for the Leela Mart college-project demo. Data is
+persisted in MySQL, so it survives redeploys - not just a flat file sitting
+inside the app directory.
 
 ## Run it
 
 ```bash
+npm install
 node server.js
 ```
 
-Then open **http://localhost:3000** in your browser. That's it — no
-database server, no build step, no `npm install`.
+Then open **http://localhost:3000** in your browser.
+
+Requires a MySQL database - set `DB_HOST`, `DB_PORT`, `DB_USER`,
+`DB_PASSWORD`, `DB_NAME` in `.env` (see `.env.example`). Tables are created
+automatically on first startup if they don't exist yet.
 
 On startup the terminal prints the owner login (`owner@leelamart.com` /
 `admin123`) and the Razorpay webhook URL/secret.
@@ -23,11 +23,11 @@ On startup the terminal prints the owner login (`owner@leelamart.com` /
 ## What's inside
 
 - `server.js` — HTTP server + all API routes (auth, products, orders, admin, payments, webhook)
-- `lib/store.js` — tiny JSON-file database
+- `lib/db.js` — MySQL persistence layer (users, sessions, orders, settings)
 - `lib/auth.js` — password hashing (scrypt), session tokens, cookies
 - `lib/router.js` — minimal Express-style router
+- `lib/env.js` — tiny dependency-free `.env` loader
 - `data/products.js` — the 100-item product catalog
-- `data/store.json` — created automatically on first run (users, orders, offline orders)
 - `public/index.html` — the storefront + owner dashboard (talks to the API via `fetch`)
 
 ## Customer accounts
@@ -72,10 +72,10 @@ RAZORPAY_WEBHOOK_SECRET=...   # only needed once the webhook is configured in th
 
 ## Limitations (by design, it's a college demo)
 
-- `data/store.json` is a flat file, not a real database — fine for a single
-  small shop's worth of traffic, not for production scale.
-- No HTTPS built in — if you deploy this beyond localhost/ngrok, put it
-  behind a reverse proxy (nginx, Caddy) or a host that terminates TLS for you.
+- No HTTPS built in — if you deploy this beyond localhost, put it behind a
+  reverse proxy (nginx, Caddy) or a host that terminates TLS for you.
 - Passwords are hashed (scrypt) but there's no email verification, rate
   limiting, or account lockout — add those before using this for anything
   real.
+- The MySQL connection pool has no retry/backoff logic - fine for a single
+  small shop's worth of traffic, not built for high concurrency.
