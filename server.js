@@ -1,8 +1,11 @@
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const crypto = require('crypto');
+
+require('./lib/env').loadEnv(path.join(__dirname, '.env'));
 
 const Router = require('./lib/router');
 const store = require('./lib/store');
@@ -15,6 +18,8 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const DELIVERY_WAIT_MS = 5 * 60 * 1000; // 5 minutes, same as the original demo
 const TAX_RATE = 0.18;
 const DELIVERY_FEE = 100;
+const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || '';
+const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
 
 const db = store.load();
 // If WEBHOOK_SECRET is set in the environment, it always wins - this keeps
@@ -248,6 +253,49 @@ function findOrCreateAutoUser(name) {
   return db.users[email];
 }
 
+// Calls the Razorpay REST API using key/secret Basic Auth. No SDK - just the
+// built-in https module, consistent with this project's zero-dependency
+// design (see package.json).
+function razorpayApiRequest(method, pathname, bodyObj) {
+  return new Promise((resolve, reject) => {
+    const payload = bodyObj ? JSON.stringify(bodyObj) : null;
+    const authHeader = 'Basic ' + Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString('base64');
+    const req = https.request({
+      hostname: 'api.razorpay.com',
+      path: pathname,
+      method,
+      headers: Object.assign(
+        { Authorization: authHeader },
+        payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {}
+      )
+    }, res => {
+      let data = '';
+      res.on('data', c => { data += c; });
+      res.on('end', () => {
+        let parsed;
+        try { parsed = data ? JSON.parse(data) : {}; } catch (e) { parsed = { raw: data }; }
+        resolve({ status: res.statusCode, body: parsed });
+      });
+    });
+    req.on('error', reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+// Razorpay order_id -> priced cart, kept in memory only until the payment is
+// verified (or abandoned). Server-computed pricing is what actually gets
+// charged and later turned into the real order - the client never gets to
+// dictate the amount.
+const pendingPayments = new Map();
+const PENDING_PAYMENT_TTL_MS = 30 * 60 * 1000;
+function prunePendingPayments() {
+  const cutoff = Date.now() - PENDING_PAYMENT_TTL_MS;
+  for (const [id, p] of pendingPayments) {
+    if (p.createdAt < cutoff) pendingPayments.delete(id);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Auth routes
 // ---------------------------------------------------------------------------
@@ -344,6 +392,97 @@ router.post('/api/orders', async (req, res) => {
   catch (e) { return sendJson(res, 400, { error: e.message }); }
 
   const order = buildOrder(items, randomAddress);
+  u.orders.push(order);
+  store.save();
+  sendJson(res, 200, order);
+});
+
+// ---------------------------------------------------------------------------
+// Razorpay Standard Checkout: create-order -> checkout.js modal -> verify
+// ---------------------------------------------------------------------------
+router.post('/api/payments/create-order', async (req, res) => {
+  if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
+    return sendJson(res, 500, { error: 'Razorpay is not configured on this server (missing RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET).' });
+  }
+  const u = getCurrentUser(req);
+  if (!u) return sendJson(res, 401, { error: 'Please log in to pay.' });
+
+  const body = await readJsonBody(req);
+  let items;
+  try { items = computeItemsFromCart(body.items || []); }
+  catch (e) { return sendJson(res, 400, { error: e.message }); }
+
+  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+  const tax = Math.round(subtotal * TAX_RATE);
+  const delivery = DELIVERY_FEE;
+  const grandTotal = subtotal + tax + delivery;
+  const amountPaise = Math.round(grandTotal * 100);
+  if (amountPaise < 100) return sendJson(res, 400, { error: 'Order amount must be at least Rs. 1.' });
+
+  prunePendingPayments();
+  let rzpRes;
+  try {
+    rzpRes = await razorpayApiRequest('POST', '/v1/orders', {
+      amount: amountPaise, currency: 'INR', receipt: 'LM-' + Date.now().toString(36)
+    });
+  } catch (e) {
+    return sendJson(res, 500, { error: 'Could not reach Razorpay: ' + e.message });
+  }
+  if (rzpRes.status === 401) {
+    return sendJson(res, 401, { error: 'Razorpay authentication failed - check RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET.' });
+  }
+  if (rzpRes.status >= 400) {
+    const msg = (rzpRes.body && rzpRes.body.error && rzpRes.body.error.description) || 'Razorpay order creation failed.';
+    return sendJson(res, 500, { error: msg });
+  }
+
+  pendingPayments.set(rzpRes.body.id, { userEmail: u.email, items, subtotal, tax, delivery, grandTotal, createdAt: Date.now() });
+
+  sendJson(res, 200, {
+    key_id: RAZORPAY_KEY_ID,
+    order_id: rzpRes.body.id,
+    amount: rzpRes.body.amount,
+    currency: rzpRes.body.currency,
+    name: u.name,
+    email: u.email
+  });
+});
+
+router.post('/api/payments/verify', async (req, res) => {
+  const u = getCurrentUser(req);
+  if (!u) return sendJson(res, 401, { error: 'Please log in.' });
+
+  const body = await readJsonBody(req);
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = body;
+  if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+    return sendJson(res, 400, { error: 'Missing payment verification fields.' });
+  }
+
+  const pending = pendingPayments.get(razorpay_order_id);
+  if (!pending || pending.userEmail !== u.email) {
+    return sendJson(res, 400, { error: 'No matching pending payment found for this order.' });
+  }
+
+  const expected = crypto.createHmac('sha256', RAZORPAY_KEY_SECRET)
+    .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+    .digest('hex');
+  const a = Buffer.from(expected, 'hex');
+  const b = Buffer.from(String(razorpay_signature), 'hex');
+  const valid = a.length === b.length && crypto.timingSafeEqual(a, b);
+  if (!valid) return sendJson(res, 400, { error: 'Payment signature verification failed.' });
+
+  pendingPayments.delete(razorpay_order_id);
+
+  const order = {
+    orderId: 'LM' + Date.now().toString().slice(-8) + Math.floor(Math.random() * 90 + 10),
+    orderDate: new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+    createdAt: Date.now(),
+    address: randomAddress(),
+    items: pending.items, subtotal: pending.subtotal, tax: pending.tax, delivery: pending.delivery, grandTotal: pending.grandTotal,
+    deliverAt: Date.now() + DELIVERY_WAIT_MS,
+    status: 'Processing', offline: false,
+    source: 'razorpay-checkout', razorpayOrderId: razorpay_order_id, razorpayPaymentId: razorpay_payment_id
+  };
   u.orders.push(order);
   store.save();
   sendJson(res, 200, order);

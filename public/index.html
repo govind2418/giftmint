@@ -162,6 +162,7 @@
   .webhook-box{background:#f7f3ff;border:1px dashed var(--primary);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12.5px;}
   .webhook-box code{background:#fff;padding:2px 6px;border-radius:4px;border:1px solid #ddd;word-break:break-all;}
 </style>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
 <body>
 
@@ -530,22 +531,54 @@ async function logout(){
   renderAuthArea();
 }
 
-// ---------- Orders ----------
+// ---------- Orders / Razorpay Checkout ----------
 function placeOrder(){
   const ids = Object.keys(cart);
   if(ids.length===0) return;
   requireLogin(async () => {
     const items = ids.map(id => ({ productId: Number(id), qty: cart[id] }));
     try{
-      const order = await api('/api/orders', { method:'POST', body: JSON.stringify({ items }) });
-      currentOrder = order;
-      renderInvoice();
-      document.getElementById('invoiceOverlay').classList.add('open');
-      updateTracker(order);
-      cart = {}; updateCartCount(); renderCart();
-      toggleCart(false);
+      const order = await api('/api/payments/create-order', { method:'POST', body: JSON.stringify({ items }) });
+      openRazorpayCheckout(order);
     } catch(e){ alert(e.message); }
   });
+}
+
+function openRazorpayCheckout(order){
+  const rzp = new Razorpay({
+    key: order.key_id,
+    amount: order.amount,
+    currency: order.currency,
+    order_id: order.order_id,
+    name: "Leela Mart",
+    description: "Order payment",
+    prefill: { name: order.name, email: order.email },
+    theme: { color: "#6a1b9a" },
+    modal: {
+      ondismiss: function(){ alert("Payment cancelled - your cart is unchanged."); }
+    },
+    handler: async function(response){
+      try{
+        const verified = await api('/api/payments/verify', { method:'POST', body: JSON.stringify({
+          razorpay_order_id: response.razorpay_order_id,
+          razorpay_payment_id: response.razorpay_payment_id,
+          razorpay_signature: response.razorpay_signature
+        })});
+        currentOrder = verified;
+        renderInvoice();
+        document.getElementById('invoiceOverlay').classList.add('open');
+        updateTracker(verified);
+        cart = {}; updateCartCount(); renderCart();
+        toggleCart(false);
+      } catch(e){
+        alert("Payment succeeded but order verification failed: " + e.message);
+      }
+    }
+  });
+  rzp.on('payment.failed', function(response){
+    alert("Payment failed: " + ((response.error && response.error.description) || "Please try again."));
+  });
+  rzp.open();
 }
 function buyNow(id){
   requireLogin(async () => {

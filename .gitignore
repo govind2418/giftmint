@@ -3,3 +3,4 @@ data/store.json
 data/backups/
 *.log
 .DS_Store
+.env
