@@ -96,6 +96,14 @@ module.exports = [
   {id:78,name:"Haldiram's Namkeen Combo Pack",cat:"Grocery & Daily Essentials",kw:"snacks",price:299,mrp:349,rating:4.4,color:"f1f8e9"},
   {id:79,name:"Red Label Tea 1kg",cat:"Grocery & Daily Essentials",kw:"tea",price:499,mrp:549,rating:4.5,color:"f1f8e9"},
   {id:80,name:"Patanjali Cow Ghee 1L",cat:"Grocery & Daily Essentials",kw:"ghee",price:599,mrp:699,rating:4.3,color:"f1f8e9"},
+  {id:101,name:"Madhur Pure Sugar 1kg",cat:"Grocery & Daily Essentials",kw:"sugar",price:52,mrp:62,rating:4.4,color:"f1f8e9"},
+  {id:102,name:"MDH Garam Masala 100g",cat:"Grocery & Daily Essentials",kw:"masala",price:89,mrp:109,rating:4.5,color:"f1f8e9"},
+  {id:103,name:"Everest Turmeric Powder 200g",cat:"Grocery & Daily Essentials",kw:"masala",price:69,mrp:85,rating:4.3,color:"f1f8e9"},
+  {id:104,name:"Catch Red Chilli Powder 200g",cat:"Grocery & Daily Essentials",kw:"masala",price:79,mrp:99,rating:4.4,color:"f1f8e9"},
+  {id:105,name:"Tata Tea Gold 1kg",cat:"Grocery & Daily Essentials",kw:"tea",price:459,mrp:519,rating:4.6,color:"f1f8e9"},
+  {id:106,name:"Toor Dal (Arhar) 1kg",cat:"Grocery & Daily Essentials",kw:"dal",price:159,mrp:189,rating:4.3,color:"f1f8e9"},
+  {id:107,name:"MTR Sambar Masala 100g",cat:"Grocery & Daily Essentials",kw:"masala",price:65,mrp:79,rating:4.2,color:"f1f8e9"},
+  {id:108,name:"Everyday Milk Powder 400g",cat:"Grocery & Daily Essentials",kw:"milk-powder",price:229,mrp:269,rating:4.1,color:"f1f8e9"},
 
   // Health & Fitness
   {id:81,name:"MuscleBlaze Whey Protein 1kg",cat:"Health & Fitness",kw:"protein-powder",price:1999,mrp:2599,rating:4.3,color:"e8f5e9"},

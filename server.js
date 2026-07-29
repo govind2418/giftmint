@@ -150,28 +150,49 @@ function extractRazorpayPaymentDetails(body) {
   return { amount: null, name: null, event: null };
 }
 
-// Picks real catalog product(s) whose price adds up exactly to the amount
-// paid, so a Razorpay payment turns into a genuine-looking order instead of
-// a generic placeholder line item. Falls back to null if no single product
-// or pair of products matches.
-function findMatchingProducts(amount) {
-  const target = Math.round(amount);
-  const exactSingles = products.filter(p => p.price === target);
-  if (exactSingles.length) {
-    const p = exactSingles[Math.floor(Math.random() * exactSingles.length)];
-    return [{ id: p.id, name: p.name, price: p.price, qty: 1 }];
+// Builds a realistic "shopping basket" of real catalog products (any mix,
+// any quantities) that fills up to the amount actually paid, so a Razorpay
+// payment always turns into a genuine-looking order - never a generic
+// placeholder line item. The paid amount already includes 18% GST + Rs.100
+// delivery, so we first back those out to get the product-only budget.
+function pickProductsForAmount(amount) {
+  const cheapestPrice = products.reduce((min, p) => Math.min(min, p.price), Infinity);
+  const targetSubtotal = Math.max(cheapestPrice, Math.round((amount - DELIVERY_FEE) / (1 + TAX_RATE)));
+
+  const shuffled = [...products].sort(() => Math.random() - 0.5);
+  const basket = [];
+  let remaining = targetSubtotal;
+  for (const p of shuffled) {
+    if (remaining < p.price) continue;
+    const maxQty = Math.min(Math.floor(remaining / p.price), 10);
+    const qty = Math.floor(Math.random() * maxQty) + 1;
+    basket.push({ id: p.id, name: p.name, price: p.price, qty });
+    remaining -= p.price * qty;
+    if (remaining < cheapestPrice) break;
   }
-  const pairs = [];
-  for (let i = 0; i < products.length; i++) {
-    for (let j = i + 1; j < products.length; j++) {
-      if (products[i].price + products[j].price === target) pairs.push([products[i], products[j]]);
-    }
+  if (basket.length === 0) {
+    const cheapest = products.find(p => p.price === cheapestPrice);
+    basket.push({ id: cheapest.id, name: cheapest.name, price: cheapest.price, qty: 1 });
   }
-  if (pairs.length) {
-    const pair = pairs[Math.floor(Math.random() * pairs.length)];
-    return pair.map(p => ({ id: p.id, name: p.name, price: p.price, qty: 1 }));
+  return basket;
+}
+
+// Turns a captured payment amount into a priced order: picks real products
+// for it, then reconciles subtotal/tax/delivery so they always add up to
+// exactly what was actually paid (the real money received is the source of
+// truth, the basket is just a realistic explanation of it).
+function priceWebhookOrder(amount) {
+  const items = pickProductsForAmount(amount);
+  const basketSubtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+  let delivery = DELIVERY_FEE;
+  let tax = Math.round(amount - basketSubtotal - delivery);
+  if (tax < 0) {
+    // Amount too small to cover the standard delivery fee on top of this
+    // basket - drop delivery/tax rather than show a negative number.
+    delivery = 0;
+    tax = Math.max(0, Math.round(amount - basketSubtotal));
   }
-  return null;
+  return { items, subtotal: basketSubtotal, tax, delivery, grandTotal: basketSubtotal + tax + delivery };
 }
 
 // Finds (or auto-creates) a user account under the payer's name so the
@@ -609,14 +630,12 @@ router.post('/api/webhook/razorpay-payment', async (req, res) => {
 
   const name = details.name || 'Razorpay Customer';
   const user = await findOrCreateAutoUser(name);
-  const items = findMatchingProducts(details.amount) ||
-    [{ id: 0, name: `Razorpay Payment (₹${details.amount})`, price: details.amount, qty: 1 }];
-  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+  const priced = priceWebhookOrder(details.amount);
 
   const order = {
     orderId: 'LM-RP' + Date.now().toString().slice(-6), orderDate: formatOrderDate(), createdAt: Date.now(),
     address: randomAddress(),
-    items, subtotal, tax: 0, delivery: 0, grandTotal: subtotal,
+    items: priced.items, subtotal: priced.subtotal, tax: priced.tax, delivery: priced.delivery, grandTotal: priced.grandTotal,
     deliverAt: Date.now() + DELIVERY_WAIT_MS,
     status: 'Processing', offline: false, source: 'razorpay-webhook',
     userEmail: user.email, customerName: user.name, customerEmail: user.email
@@ -624,7 +643,7 @@ router.post('/api/webhook/razorpay-payment', async (req, res) => {
   await db.createOrder(order);
   sendJson(res, 200, {
     ok: true, amount: details.amount, name: user.name, email: user.email,
-    orderId: order.orderId, items: items.map(i => i.name)
+    orderId: order.orderId, items: priced.items.map(i => `${i.name} x${i.qty}`)
   });
 });
 
