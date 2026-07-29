@@ -232,7 +232,7 @@
       <p>Leela Mart HQ, India</p>
       <p>support@leelamart.demo</p>
     </div>
-    <div>
+    <div id="ownerLoginBlock">
       <h4>Owner</h4>
       <p><a onclick="openAdminLogin()" style="text-decoration:underline;cursor:pointer;">Owner / Admin Login</a></p>
     </div>
@@ -434,6 +434,7 @@ function renderAuthArea(){
   } else {
     el.innerHTML = `<a onclick="openAuth('login')">Login</a>`;
   }
+  document.getElementById('ownerLoginBlock').style.display = currentUser ? 'none' : '';
 }
 function requireLogin(action){
   if(currentUser){ action(); return; }
