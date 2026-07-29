@@ -16,6 +16,13 @@ const TAX_RATE = 0.18;
 const DELIVERY_FEE = 100;
 
 const db = store.load();
+// If WEBHOOK_SECRET is set in the environment, it always wins - this keeps
+// the IFTTT applet's URL stable across redeploys even if data/store.json
+// itself doesn't survive (e.g. a host that resets untracked files on deploy).
+if (process.env.WEBHOOK_SECRET) {
+  db.webhookSecret = process.env.WEBHOOK_SECRET;
+  store.save();
+}
 const router = new Router();
 
 // ---------------------------------------------------------------------------
