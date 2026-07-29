@@ -136,6 +136,41 @@ function parseAmountFromText(text) {
   return match ? parseFloat(match[1].replace(/,/g, '')) : null;
 }
 
+// Best-effort sender-name extraction from common GPay/PhonePe/Paytm/bank SMS
+// notification wordings. Falls back to null if nothing matches.
+function parseNameFromText(text) {
+  const t = String(text || '').trim();
+  const patterns = [
+    /^([A-Za-z][A-Za-z.\s]{1,40}?)\s+paid you/i,               // "John Doe paid you ₹499"
+    /(?:received|credited)[^a-zA-Z]*(?:from|frm)\s+([A-Za-z][A-Za-z.\s]{1,40}?)(?:\s+(?:via|using|on|towards|for|to|UPI|Ref|A\/c)\b|[.,]|$)/i,
+    /\bfrom\s+([A-Za-z][A-Za-z.\s]{1,40}?)(?:\s+(?:via|using|on|towards|for|to|UPI|Ref|A\/c)\b|[.,]|$)/i
+  ];
+  for (const re of patterns) {
+    const m = t.match(re);
+    if (m) {
+      const name = m[1].trim().replace(/\s+/g, ' ');
+      if (name.length >= 2) {
+        return name.replace(/\b\w/g, c => c.toUpperCase());
+      }
+    }
+  }
+  return null;
+}
+
+// Finds (or auto-creates) a user account under the payer's name so the
+// webhook-generated order shows up as a normal customer order. Synthetic
+// accounts get a random password (nobody needs to log into them - they
+// exist purely so the order is attributed and visible on the dashboard).
+function findOrCreateAutoUser(name) {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '') || 'customer';
+  const email = `${slug}@upi.auto`;
+  if (!db.users[email]) {
+    const { salt, hash } = auth.hashPassword(auth.newToken());
+    db.users[email] = { name, email, passwordSalt: salt, passwordHash: hash, sessionTokens: [], orders: [], auto: true };
+  }
+  return db.users[email];
+}
+
 // ---------------------------------------------------------------------------
 // Auth routes
 // ---------------------------------------------------------------------------
@@ -371,19 +406,22 @@ router.post('/api/webhook/bank-notification', async (req, res) => {
   const amount = parseAmountFromText(text);
   if (!amount) return sendJson(res, 400, { error: 'Could not find a rupee amount in the notification text.', text });
 
+  const name = parseNameFromText(text) || 'UPI Customer';
+  const user = findOrCreateAutoUser(name);
+
   const order = {
     orderId: 'LM-WH' + Date.now().toString().slice(-6),
     orderDate: new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
     createdAt: Date.now(),
-    address: 'N/A — Offline / in-store payment (auto via IFTTT)',
-    items: [{ name: 'Bank SMS: ' + text.slice(0, 80), qty: 1, price: amount }],
+    address: randomAddress(),
+    items: [{ name: 'UPI Payment: ' + text.slice(0, 80), qty: 1, price: amount }],
     subtotal: amount, tax: 0, delivery: 0, grandTotal: amount,
-    status: 'Delivered', offline: true,
-    customerName: 'Auto (Bank Notification)', customerEmail: '—', source: 'ifttt-webhook'
+    deliverAt: Date.now() + DELIVERY_WAIT_MS,
+    status: 'Processing', offline: false, source: 'ifttt-webhook'
   };
-  db.offlineOrders.push(order);
+  user.orders.push(order);
   store.save();
-  sendJson(res, 200, { ok: true, amount, orderId: order.orderId });
+  sendJson(res, 200, { ok: true, amount, name: user.name, email: user.email, orderId: order.orderId });
 });
 
 // ---------------------------------------------------------------------------
