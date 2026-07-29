@@ -401,6 +401,66 @@ function getAllOrders() {
   return all.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
+// Renders a standalone, print-ready Tax Invoice page for one order. Works
+// for every order (self-placed, offline, IFTTT, or Razorpay) since it's
+// looked up from the admin's own aggregate view rather than a customer
+// session - the auto/synthetic accounts webhooks create have no real login,
+// so this is the only way to ever see their invoice.
+function renderInvoiceHtml(o) {
+  const esc = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const rows = o.items.map(i => `<tr><td>${esc(i.name)}</td><td>${i.qty}</td><td>Rs. ${i.price.toLocaleString('en-IN')}</td><td>Rs. ${(i.price * i.qty).toLocaleString('en-IN')}</td></tr>`).join('');
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Invoice ${esc(o.orderId)} - Leela Mart</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;color:#222;max-width:700px;margin:24px auto;padding:0 16px;}
+  h1{font-size:22px;margin:0 0 2px;}
+  .sub{color:#666;font-size:13px;margin-bottom:18px;}
+  .row{display:flex;justify-content:space-between;gap:24px;margin-bottom:18px;flex-wrap:wrap;}
+  .box h4{font-size:11px;text-transform:uppercase;color:#888;margin:0 0 4px;letter-spacing:.5px;}
+  .box p{margin:0;font-size:13.5px;line-height:1.6;}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px;}
+  th{text-align:left;border-bottom:2px solid #ddd;padding:8px 6px;color:#666;font-size:11px;text-transform:uppercase;}
+  td{padding:8px 6px;border-bottom:1px solid #eee;}
+  .totals{margin-left:auto;width:260px;}
+  .totals div{display:flex;justify-content:space-between;padding:4px 0;font-size:13.5px;}
+  .totals .grand{font-size:17px;font-weight:800;border-top:2px solid #ddd;margin-top:6px;padding-top:8px;}
+  .status{display:inline-block;padding:4px 10px;border-radius:4px;font-size:12px;font-weight:700;margin-bottom:16px;}
+  .status.delivered{background:#e8f5e9;color:#2e7d32;}
+  .status.processing{background:#fff3e0;color:#ef6c00;}
+  .disclaimer{margin-top:28px;font-size:11px;color:#999;border-top:1px solid #eee;padding-top:10px;}
+  .print-bar{text-align:right;margin-bottom:16px;}
+  .print-bar button{padding:9px 18px;border:none;border-radius:6px;background:#6a1b9a;color:#fff;font-weight:700;font-size:13px;cursor:pointer;}
+  @media print{.print-bar{display:none;}}
+</style></head>
+<body>
+  <div class="print-bar"><button onclick="window.print()">Download / Print as PDF</button></div>
+  <h1>Leela Mart</h1>
+  <div class="sub">Tax Invoice &middot; Order ID: ${esc(o.orderId)} &middot; ${esc(o.orderDate)}</div>
+  <span class="status ${o.status === 'Delivered' ? 'delivered' : 'processing'}">${esc(o.status)}</span>
+  <div class="row">
+    <div class="box"><h4>Billed To</h4><p>${esc(o.customerName)}<br>${esc(o.customerEmail)}</p></div>
+    <div class="box"><h4>Delivery Address</h4><p>${esc(o.address)}</p></div>
+    <div class="box"><h4>Source</h4><p>${esc(o.offline ? 'Offline' : 'Online')}${o.source ? ' &middot; ' + esc(o.source) : ''}</p></div>
+  </div>
+  <table><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table>
+  <div class="totals">
+    <div><span>Subtotal</span><span>Rs. ${o.subtotal.toLocaleString('en-IN')}</span></div>
+    <div><span>GST (18%)</span><span>Rs. ${o.tax.toLocaleString('en-IN')}</span></div>
+    <div><span>Delivery Charge</span><span>Rs. ${o.delivery}</span></div>
+    <div class="grand"><span>Grand Total</span><span>Rs. ${o.grandTotal.toLocaleString('en-IN')}</span></div>
+  </div>
+  <div class="disclaimer">Mock invoice generated for a college demo / academic project. No real transaction occurred.</div>
+</body></html>`;
+}
+
+router.get('/api/admin/invoice/:orderId', async (req, res, params) => {
+  if (!isAdmin(req)) { res.writeHead(401); return res.end('Admin login required.'); }
+  const order = getAllOrders().find(o => o.orderId === params.orderId);
+  if (!order) { res.writeHead(404); return res.end('Order not found.'); }
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(renderInvoiceHtml(order));
+});
+
 router.get('/api/admin/orders', async (req, res) => {
   if (!isAdmin(req)) return sendJson(res, 401, { error: 'Admin login required.' });
   const orders = getAllOrders();
