@@ -94,7 +94,6 @@
   footer p{line-height:1.9;cursor:default;}
   .disclaimer{text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid rgba(255,255,255,.15);font-size:12px;color:#a892cf;line-height:1.7;}
   .no-results{text-align:center;padding:40px;color:var(--muted);font-size:14px;grid-column:1/-1;}
-  .total-note{font-size:11px;color:var(--muted);margin:-6px 0 12px;}
 
   /* Invoice / modal boxes */
   .invoice-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:300;display:none;align-items:center;justify-content:center;padding:20px;}
@@ -246,8 +245,10 @@
   </div>
   <div class="drawer-body" id="cartBody"></div>
   <div class="drawer-footer" id="cartFooter" style="display:none;">
+    <div class="total-row"><span>Subtotal</span><span id="cartSubtotal">₹0</span></div>
+    <div class="total-row" style="font-weight:400;font-size:13px;color:var(--muted);"><span>GST (18%)</span><span id="cartTax">₹0</span></div>
+    <div class="total-row" style="font-weight:400;font-size:13px;color:var(--muted);"><span>Delivery Charge</span><span id="cartDelivery">₹0</span></div>
     <div class="total-row"><span>Total</span><span id="cartTotal">₹0</span></div>
-    <div class="total-note">+18% GST and ₹100 delivery charge applied at checkout</div>
     <button class="checkout-btn" onclick="placeOrder()">Place Order</button>
   </div>
 </div>
@@ -270,6 +271,10 @@
 
 <div class="invoice-overlay" id="adminOverlay">
   <div class="invoice-box" id="adminBox" style="max-width:820px;"></div>
+</div>
+
+<div class="invoice-overlay" id="buyNowOverlay">
+  <div class="invoice-box" id="buyNowBox" style="max-width:380px;"></div>
 </div>
 
 <div class="invoice-overlay" id="offlineOrderOverlay">
@@ -397,12 +402,12 @@ function renderCart(){
     footer.style.display = "none";
     return;
   }
-  let total = 0;
+  const cartItems = [];
   body.innerHTML = ids.map(id => {
     const p = products.find(x=>x.id==id);
     const img = productImg(p, 100, 100);
     const qty = cart[id];
-    total += p.price * qty;
+    cartItems.push({ price: p.price, qty });
     return `
       <div class="cart-item">
         <div class="thumb-sm"><img src="${img.src}" alt="${p.name}" onerror="this.onerror=null;this.src='${img.fallback}';"></div>
@@ -417,7 +422,11 @@ function renderCart(){
       </div>`;
   }).join('');
   footer.style.display = "block";
-  document.getElementById('cartTotal').textContent = "₹" + total.toLocaleString('en-IN');
+  const t = computeTotals(cartItems);
+  document.getElementById('cartSubtotal').textContent = "₹" + t.subtotal.toLocaleString('en-IN');
+  document.getElementById('cartTax').textContent = "₹" + t.tax.toLocaleString('en-IN');
+  document.getElementById('cartDelivery').textContent = "₹" + t.delivery;
+  document.getElementById('cartTotal').textContent = "₹" + t.grandTotal.toLocaleString('en-IN');
 }
 function toggleCart(open){
   document.getElementById('drawer').classList.toggle('open', open);
@@ -540,6 +549,16 @@ async function logout(){
 }
 
 // ---------- Orders / Razorpay Checkout ----------
+// Same GST + delivery formula the server uses (server always recomputes the
+// authoritative amount - this is only for showing the customer the real
+// total before they pay, not for charging).
+function computeTotals(items){
+  const subtotal = items.reduce((s,i) => s + i.price * i.qty, 0);
+  const tax = Math.round(subtotal * 0.18);
+  const delivery = subtotal > 0 ? 100 : 0;
+  return { subtotal, tax, delivery, grandTotal: subtotal + tax + delivery };
+}
+
 function placeOrder(){
   const ids = Object.keys(cart);
   if(ids.length===0) return;
@@ -547,12 +566,13 @@ function placeOrder(){
     const items = ids.map(id => ({ productId: Number(id), qty: cart[id] }));
     try{
       const order = await api('/api/payments/create-order', { method:'POST', body: JSON.stringify({ items }) });
-      openRazorpayCheckout(order);
+      openRazorpayCheckout(order, { clearCart: true });
     } catch(e){ alert(e.message); }
   });
 }
 
-function openRazorpayCheckout(order){
+function openRazorpayCheckout(order, opts){
+  opts = opts || {};
   const rzp = new Razorpay({
     key: order.key_id,
     amount: order.amount,
@@ -563,7 +583,7 @@ function openRazorpayCheckout(order){
     prefill: { name: order.name, email: order.email },
     theme: { color: "#6a1b9a" },
     modal: {
-      ondismiss: function(){ alert("Payment cancelled - your cart is unchanged."); }
+      ondismiss: function(){ alert("Payment cancelled - no order was placed."); }
     },
     handler: async function(response){
       try{
@@ -576,8 +596,9 @@ function openRazorpayCheckout(order){
         renderInvoice();
         document.getElementById('invoiceOverlay').classList.add('open');
         updateTracker(verified);
-        cart = {}; updateCartCount(); renderCart();
+        if(opts.clearCart){ cart = {}; updateCartCount(); renderCart(); }
         toggleCart(false);
+        closeBuyNowPreview();
       } catch(e){
         alert("Payment succeeded but order verification failed: " + e.message);
       }
@@ -588,17 +609,44 @@ function openRazorpayCheckout(order){
   });
   rzp.open();
 }
+
+let buyNowProduct = null;
 function buyNow(id){
-  requireLogin(async () => {
-    try{
-      const order = await api('/api/orders', { method:'POST', body: JSON.stringify({ items: [{ productId:id, qty:1 }] }) });
-      currentOrder = order;
-      renderInvoice();
-      document.getElementById('invoiceOverlay').classList.add('open');
-      updateTracker(order);
-      toggleCart(false);
-    } catch(e){ alert(e.message); }
+  requireLogin(() => {
+    buyNowProduct = products.find(p => p.id === id);
+    if(!buyNowProduct) return;
+    renderBuyNowPreview();
+    document.getElementById('buyNowOverlay').classList.add('open');
   });
+}
+function closeBuyNowPreview(){
+  document.getElementById('buyNowOverlay').classList.remove('open');
+  buyNowProduct = null;
+}
+function renderBuyNowPreview(){
+  const p = buyNowProduct;
+  const t = computeTotals([{ price: p.price, qty: 1 }]);
+  document.getElementById('buyNowBox').innerHTML = `
+    <div class="invoice-head"><h2>Confirm Purchase</h2><div class="sub">${p.name}</div></div>
+    <div class="invoice-body">
+      <div class="invoice-totals">
+        <div><span>Item price</span><span>₹${t.subtotal.toLocaleString('en-IN')}</span></div>
+        <div><span>GST (18%)</span><span>₹${t.tax.toLocaleString('en-IN')}</span></div>
+        <div><span>Delivery Charge</span><span>₹${t.delivery}</span></div>
+        <div class="grand"><span>You Pay</span><span>₹${t.grandTotal.toLocaleString('en-IN')}</span></div>
+      </div>
+    </div>
+    <div class="invoice-footer">
+      <button class="btn-close-invoice" onclick="closeBuyNowPreview()">Cancel</button>
+      <button class="checkout-btn" style="flex:1;" onclick="confirmBuyNow()">Proceed to Pay</button>
+    </div>`;
+}
+async function confirmBuyNow(){
+  if(!buyNowProduct) return;
+  try{
+    const order = await api('/api/payments/create-order', { method:'POST', body: JSON.stringify({ items: [{ productId: buyNowProduct.id, qty: 1 }] }) });
+    openRazorpayCheckout(order, { clearCart: false });
+  } catch(e){ alert(e.message); }
 }
 function renderInvoice(){
   if(!currentOrder) return;

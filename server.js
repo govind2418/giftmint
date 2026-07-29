@@ -309,31 +309,9 @@ router.get('/api/products', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Orders (customer)
-// ---------------------------------------------------------------------------
-router.post('/api/orders', async (req, res) => {
-  const u = await getCurrentUser(req);
-  if (!u) return sendJson(res, 401, { error: 'Please log in to place an order.' });
-
-  const body = await readJsonBody(req);
-  let items;
-  try { items = computeItemsFromCart(body.items || []); }
-  catch (e) { return sendJson(res, 400, { error: e.message }); }
-
-  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
-  const tax = Math.round(subtotal * TAX_RATE);
-  const delivery = DELIVERY_FEE;
-  const grandTotal = subtotal + tax + delivery;
-  const order = {
-    orderId: newOrderId('LM'), orderDate: formatOrderDate(), createdAt: Date.now(),
-    address: randomAddress(), items, subtotal, tax, delivery, grandTotal,
-    deliverAt: Date.now() + DELIVERY_WAIT_MS, status: 'Processing', offline: false,
-    userEmail: u.email, customerName: u.name, customerEmail: u.email
-  };
-  await db.createOrder(order);
-  sendJson(res, 200, order);
-});
-
+// Orders (customer) - actual order creation only happens after a verified
+// Razorpay payment (see /api/payments/verify below). There is deliberately
+// no "create order for free" endpoint here.
 // ---------------------------------------------------------------------------
 // Razorpay Standard Checkout: create-order -> checkout.js modal -> verify
 // ---------------------------------------------------------------------------
