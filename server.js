@@ -18,6 +18,10 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'owner@giftmint.com';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || '';
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
+// Only applies to the authenticated storefront checkout (real inventory) -
+// webhook/offline synthetic orders price at exactly the amount received,
+// with no "before checkout" step to add a fee on top of.
+const PLATFORM_FEE_RATE = 0.05;
 
 const router = new Router();
 
@@ -477,7 +481,8 @@ router.post('/api/payments/create-order', async (req, res) => {
   }
 
   const subtotal = lines.reduce((s, l) => s + l.denomination * l.qty, 0);
-  const grandTotal = subtotal;
+  const platformFee = Math.round(subtotal * PLATFORM_FEE_RATE);
+  const grandTotal = subtotal + platformFee;
   const amountPaise = Math.round(grandTotal * 100);
   if (amountPaise < 100) return sendJson(res, 400, { error: 'Order amount must be at least Rs. 1.' });
 
@@ -498,7 +503,7 @@ router.post('/api/payments/create-order', async (req, res) => {
     return sendJson(res, 500, { error: msg });
   }
 
-  pendingPayments.set(rzpRes.body.id, { userEmail: u.email, lines, subtotal, grandTotal, createdAt: Date.now() });
+  pendingPayments.set(rzpRes.body.id, { userEmail: u.email, lines, subtotal, platformFee, grandTotal, createdAt: Date.now() });
 
   sendJson(res, 200, {
     key_id: RAZORPAY_KEY_ID,
@@ -551,7 +556,7 @@ router.post('/api/payments/verify', async (req, res) => {
     const orderObj = {
       orderId, orderDate: formatOrderDate(), createdAt: Date.now(),
       address: 'Digital delivery',
-      items, subtotal: pending.subtotal, tax: 0, delivery: 0, grandTotal: pending.grandTotal,
+      items, subtotal: pending.subtotal, tax: pending.platformFee, delivery: 0, grandTotal: pending.grandTotal,
       status: 'Delivered', offline: false,
       source: 'razorpay-checkout', razorpayOrderId: razorpay_order_id, razorpayPaymentId: razorpay_payment_id,
       userEmail: u.email, customerName: u.name, customerEmail: u.email
@@ -630,44 +635,83 @@ function renderInvoiceHtml(o) {
   const rows = o.items.map(i => `<tr><td>${esc(i.platformName)} Gift Card</td><td>Rs. ${i.denomination.toLocaleString('en-IN')}</td><td class="code">${esc(i.code)}</td></tr>`).join('');
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Invoice ${esc(o.orderId)} - GiftMint</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@700;800&display=swap" rel="stylesheet">
 <style>
-  body{font-family:Arial,Helvetica,sans-serif;color:#222;max-width:700px;margin:24px auto;padding:0 16px;}
-  h1{font-size:22px;margin:0 0 2px;}
-  .sub{color:#666;font-size:13px;margin-bottom:18px;}
-  .row{display:flex;justify-content:space-between;gap:24px;margin-bottom:18px;flex-wrap:wrap;}
-  .box h4{font-size:11px;text-transform:uppercase;color:#888;margin:0 0 4px;letter-spacing:.5px;}
-  .box p{margin:0;font-size:13.5px;line-height:1.6;}
-  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px;}
-  th{text-align:left;border-bottom:2px solid #ddd;padding:8px 6px;color:#666;font-size:11px;text-transform:uppercase;}
-  td{padding:8px 6px;border-bottom:1px solid #eee;}
-  td.code{font-family:'Courier New',monospace;font-weight:700;letter-spacing:.5px;}
+  :root{
+    --primary:#4F46E5; --primary-dark:#3730A3; --primary-light:#EEF2FF;
+    --mint:#10B981; --mint-dark:#059669; --mint-light:#ECFDF5;
+    --text:#0F172A; --muted:#64748B; --border:#E5E7EB; --bg:#F5F6FB;
+  }
+  *{box-sizing:border-box;}
+  body{font-family:'Inter',Arial,Helvetica,sans-serif;color:var(--text);background:var(--bg);margin:0;padding:32px 16px;}
+  .sheet{max-width:700px;margin:0 auto;background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(15,23,42,.08);overflow:hidden;border:1px solid var(--border);}
+  .print-bar{max-width:700px;margin:0 auto 16px;text-align:right;}
+  .print-bar button{padding:10px 20px;border:none;border-radius:8px;background:var(--mint);color:#fff;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 4px 14px rgba(16,185,129,.3);}
+  .head{background:linear-gradient(100deg,var(--primary),var(--primary-dark) 75%);color:#fff;padding:28px 32px;}
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+  .brand-word{font-family:'Poppins',sans-serif;font-size:21px;font-weight:800;letter-spacing:-.3px;}
+  .brand-word .mint{color:#6EE7B7;}
+  .sub{color:#C7D2FE;font-size:12.5px;margin-top:2px;}
+  .status{display:inline-block;padding:5px 12px;border-radius:20px;font-size:11.5px;font-weight:700;margin-top:14px;}
+  .status.delivered{background:rgba(110,231,183,.2);color:#6EE7B7;}
+  .status.processing{background:rgba(255,255,255,.18);color:#fff;}
+  .body-pad{padding:28px 32px;}
+  .row{display:flex;justify-content:space-between;gap:20px;margin-bottom:22px;flex-wrap:wrap;}
+  .box h4{font-size:10.5px;text-transform:uppercase;color:var(--muted);margin:0 0 5px;letter-spacing:.6px;font-weight:700;}
+  .box p{margin:0;font-size:13.5px;line-height:1.6;color:var(--text);}
+  table{width:100%;border-collapse:collapse;margin:4px 0 20px;font-size:13.5px;}
+  th{text-align:left;border-bottom:2px solid var(--border);padding:9px 8px;color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;}
+  td{padding:12px 8px;border-bottom:1px solid #F1F2F6;}
+  td.code{font-family:'Courier New',monospace;font-weight:700;letter-spacing:.5px;background:var(--primary-light);border-radius:4px;color:var(--primary-dark);}
   .totals{margin-left:auto;width:260px;}
-  .totals div{display:flex;justify-content:space-between;padding:4px 0;font-size:13.5px;}
-  .totals .grand{font-size:17px;font-weight:800;border-top:2px solid #ddd;margin-top:6px;padding-top:8px;}
-  .status{display:inline-block;padding:4px 10px;border-radius:4px;font-size:12px;font-weight:700;margin-bottom:16px;}
-  .status.delivered{background:#e8f5e9;color:#2e7d32;}
-  .status.processing{background:#fff3e0;color:#ef6c00;}
-  .disclaimer{margin-top:28px;font-size:11px;color:#999;border-top:1px solid #eee;padding-top:10px;}
-  .print-bar{text-align:right;margin-bottom:16px;}
-  .print-bar button{padding:9px 18px;border:none;border-radius:6px;background:#6a1b9a;color:#fff;font-weight:700;font-size:13px;cursor:pointer;}
-  @media print{.print-bar{display:none;}}
+  .totals div{display:flex;justify-content:space-between;padding:5px 0;font-size:13.5px;color:var(--muted);}
+  .totals .grand{font-size:18px;font-weight:800;border-top:2px solid var(--border);margin-top:8px;padding-top:10px;color:var(--primary-dark);}
+  .disclaimer{margin-top:24px;padding:14px 32px;font-size:11px;color:#9CA3AF;border-top:1px solid var(--border);background:#FAFAFB;line-height:1.7;}
+  @media print{
+    body{background:#fff;padding:0;}
+    .print-bar{display:none;}
+    .sheet{box-shadow:none;border:none;border-radius:0;}
+  }
 </style></head>
 <body>
   <div class="print-bar"><button onclick="window.print()">Download / Print as PDF</button></div>
-  <h1>GiftMint</h1>
-  <div class="sub">Gift Card Invoice &middot; Order ID: ${esc(o.orderId)} &middot; ${esc(o.orderDate)}</div>
-  <span class="status ${o.status === 'Delivered' ? 'delivered' : 'processing'}">${esc(o.status)}</span>
-  <div class="row">
-    <div class="box"><h4>Billed To</h4><p>${esc(o.customerName)}<br>${esc(o.customerEmail)}</p></div>
-    <div class="box"><h4>Delivery</h4><p>Digital &mdash; code(s) below</p></div>
-    <div class="box"><h4>Source</h4><p>${esc(o.offline ? 'Offline' : 'Online')}${o.source ? ' &middot; ' + esc(ORDER_SOURCE_LABELS[o.source] || o.source) : ''}</p></div>
-    ${o.contact ? `<div class="box"><h4>Contact</h4><p>${esc(maskPhone(o.contact))}</p></div>` : ''}
+  <div class="sheet">
+    <div class="head">
+      <div class="brand">
+        <svg width="34" height="34" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+          <defs><linearGradient id="gmInv" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#818CF8"/><stop offset="100%" stop-color="#34D399"/>
+          </linearGradient></defs>
+          <rect width="40" height="40" rx="11" fill="url(#gmInv)"/>
+          <rect x="9" y="15" width="22" height="5" rx="2" fill="#fff"/>
+          <rect x="11" y="19" width="18" height="12" rx="2" fill="#fff"/>
+          <rect x="18.5" y="10" width="3" height="21" fill="url(#gmInv)"/>
+          <circle cx="30" cy="9" r="2.6" fill="#fff"/>
+        </svg>
+        <span class="brand-word">Gift<span class="mint">Mint</span></span>
+      </div>
+      <div class="sub">Gift Card Invoice &middot; Order ID: ${esc(o.orderId)} &middot; ${esc(o.orderDate)}</div>
+      <span class="status ${o.status === 'Delivered' ? 'delivered' : 'processing'}">${esc(o.status)}</span>
+    </div>
+    <div class="body-pad">
+      <div class="row">
+        <div class="box"><h4>Billed To</h4><p>${esc(o.customerName)}<br>${esc(o.customerEmail)}</p></div>
+        <div class="box"><h4>Delivery</h4><p>Digital &mdash; code(s) below</p></div>
+        <div class="box"><h4>Source</h4><p>${esc(o.offline ? 'Offline' : 'Online')}${o.source ? ' &middot; ' + esc(ORDER_SOURCE_LABELS[o.source] || o.source) : ''}</p></div>
+        ${o.contact ? `<div class="box"><h4>Contact</h4><p>${esc(maskPhone(o.contact))}</p></div>` : ''}
+      </div>
+      <table><thead><tr><th>Gift Card</th><th>Value</th><th>Code</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="totals">
+        ${o.tax > 0 ? `<div><span>Subtotal</span><span>Rs. ${o.subtotal.toLocaleString('en-IN')}</span></div>
+        <div><span>Platform Fee (5%)</span><span>Rs. ${o.tax.toLocaleString('en-IN')}</span></div>` : ''}
+        <div class="grand"><span>Grand Total</span><span>Rs. ${o.grandTotal.toLocaleString('en-IN')}</span></div>
+      </div>
+    </div>
+    <div class="disclaimer">Mock invoice generated for a college demo / academic project. No real transaction occurred.</div>
   </div>
-  <table><thead><tr><th>Gift Card</th><th>Value</th><th>Code</th></tr></thead><tbody>${rows}</tbody></table>
-  <div class="totals">
-    <div class="grand"><span>Grand Total</span><span>Rs. ${o.grandTotal.toLocaleString('en-IN')}</span></div>
-  </div>
-  <div class="disclaimer">Mock invoice generated for a college demo / academic project. No real transaction occurred.</div>
 </body></html>`;
 }
 
@@ -813,7 +857,7 @@ router.get('/api/admin/orders/export.csv', async (req, res) => {
   const to = parsed.query.to ? Number(parsed.query.to) : null;
   const range = (from != null && to != null && !isNaN(from) && !isNaN(to)) ? { from, to } : null;
   const { orders } = await db.getAllOrders(range); // no limit - export gets every matching row
-  const header = ['Order ID', 'Customer Name', 'Customer Email', 'Date', 'Items', 'Item Count', 'Subtotal', 'GST', 'Delivery', 'Grand Total', 'Source', 'Status', 'Delivery Address'];
+  const header = ['Order ID', 'Customer Name', 'Customer Email', 'Date', 'Items', 'Item Count', 'Subtotal', 'Platform Fee', 'Delivery', 'Grand Total', 'Source', 'Status', 'Delivery Address'];
   const esc = v => {
     const s = String(v);
     return (s.includes(',') || s.includes('"') || s.includes('\n')) ? '"' + s.replace(/"/g, '""') + '"' : s;

@@ -98,10 +98,18 @@
   .invoice-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:300;display:none;align-items:center;justify-content:center;padding:20px;}
   .invoice-overlay.open{display:flex;}
   .invoice-box{background:#fff;max-width:480px;width:100%;max-height:90vh;overflow-y:auto;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.35);}
-  .invoice-head{background:linear-gradient(90deg,var(--primary),var(--primary-dark));color:#fff;padding:20px 24px;border-radius:10px 10px 0 0;}
+  .invoice-head{background:linear-gradient(100deg,var(--primary),var(--primary-dark) 75%);color:#fff;padding:20px 24px;border-radius:10px 10px 0 0;}
   .invoice-head h2{font-size:20px;margin-bottom:4px;}
   .invoice-head .sub{font-size:12px;opacity:.85;}
   .invoice-body{padding:20px 24px;}
+
+  /* Admin dashboard - full-screen app view, not a small centered modal */
+  #adminOverlay{padding:0;background:var(--bg);}
+  #adminBox{max-width:none;width:100%;height:100%;max-height:none;border-radius:0;box-shadow:none;display:flex;flex-direction:column;background:var(--bg);}
+  #adminBox .admin-head{flex-shrink:0;border-radius:0;padding:18px 28px;}
+  #adminBox .invoice-body{flex:1;overflow-y:auto;max-width:1280px;margin:0 auto;width:100%;padding:24px 28px 60px;}
+  .admin-brand{display:flex;align-items:center;gap:10px;}
+  .admin-brand .logo-word{font-size:19px;}
   .invoice-status{display:flex;align-items:center;gap:8px;background:#e8f5e9;color:var(--green);font-weight:800;padding:10px 14px;border-radius:6px;font-size:14px;margin-bottom:16px;}
   .invoice-status .dot{width:10px;height:10px;border-radius:50%;background:var(--green);}
   .invoice-section{margin-bottom:16px;}
@@ -254,6 +262,8 @@
   </div>
   <div class="drawer-body" id="cartBody"></div>
   <div class="drawer-footer" id="cartFooter" style="display:none;">
+    <div class="total-row" style="font-weight:500;font-size:13.5px;color:var(--muted);"><span>Subtotal</span><span id="cartSubtotal">₹0</span></div>
+    <div class="total-row" style="font-weight:500;font-size:13.5px;color:var(--muted);"><span>Platform Fee (5%)</span><span id="cartFee">₹0</span></div>
     <div class="total-row"><span>Total</span><span id="cartTotal">₹0</span></div>
     <button class="checkout-btn" onclick="placeOrder()">Place Order</button>
   </div>
@@ -276,7 +286,7 @@
 </div>
 
 <div class="invoice-overlay" id="adminOverlay">
-  <div class="invoice-box" id="adminBox" style="max-width:900px;"></div>
+  <div class="invoice-box" id="adminBox"></div>
 </div>
 
 <div class="invoice-overlay" id="profileOverlay">
@@ -304,6 +314,10 @@ async function api(path, opts){
   }
   return data;
 }
+
+// Mirrors server.js PLATFORM_FEE_RATE - display-only, the server always
+// recomputes and charges the authoritative amount.
+const PLATFORM_FEE_RATE = 0.05;
 
 // ---------- State ----------
 let catalog = [];           // [{id,name,denominations:[{value,inStock}]}]
@@ -388,14 +402,14 @@ function renderCart(){
     footer.style.display = "none";
     return;
   }
-  let total = 0;
+  let subtotal = 0;
   body.innerHTML = keys.map(key => {
     const [platform, denomStr] = key.split(':');
     const denom = Number(denomStr);
     const p = platformById(platform);
     const qty = cart[key];
     const lineTotal = denom * qty;
-    total += lineTotal;
+    subtotal += lineTotal;
     return `
       <div class="cart-item">
         <div class="thumb-sm" style="background:${platformColor(platform)};">${p ? p.name.charAt(0) : '?'}</div>
@@ -410,7 +424,10 @@ function renderCart(){
       </div>`;
   }).join('');
   footer.style.display = "block";
-  document.getElementById('cartTotal').textContent = "₹" + total.toLocaleString('en-IN');
+  const fee = Math.round(subtotal * PLATFORM_FEE_RATE);
+  document.getElementById('cartSubtotal').textContent = "₹" + subtotal.toLocaleString('en-IN');
+  document.getElementById('cartFee').textContent = "₹" + fee.toLocaleString('en-IN');
+  document.getElementById('cartTotal').textContent = "₹" + (subtotal + fee).toLocaleString('en-IN');
 }
 function toggleCart(open){
   document.getElementById('drawer').classList.toggle('open', open);
@@ -704,6 +721,8 @@ function renderInvoice(){
         <table class="invoice-table"><thead><tr><th>Gift Card</th><th>Value</th><th>Code</th></tr></thead><tbody>${rowsHtml}</tbody></table>
       </div>
       <div class="invoice-totals">
+        ${o.tax > 0 ? `<div><span>Subtotal</span><span>₹${o.subtotal.toLocaleString('en-IN')}</span></div>
+        <div><span>Platform Fee (5%)</span><span>₹${o.tax.toLocaleString('en-IN')}</span></div>` : ''}
         <div class="grand"><span>Grand Total</span><span>₹${o.grandTotal.toLocaleString('en-IN')}</span></div>
       </div>
     </div>
@@ -807,13 +826,28 @@ async function loadAdminTab(){
   else await renderAdminOrdersTab();
 }
 function adminTabsHtml(){
-  const tabBtn = (id, label) => `<button class="btn-buy" style="${adminTab===id ? '' : 'background:#eee;color:#333;'}" onclick="switchAdminTab('${id}')">${label}</button>`;
-  return `<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">${tabBtn('orders','Orders')}${tabBtn('giftcodes','Gift Codes')}${tabBtn('users','Users')}${tabBtn('failed','Failed Payments')}</div>`;
+  const tabBtn = (id, label) => `<button style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;${adminTab===id ? 'border:none;background:var(--primary);color:#fff;' : 'border:1px solid var(--border);background:#fff;color:var(--muted);'}" onclick="switchAdminTab('${id}')">${label}</button>`;
+  return `<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">${tabBtn('orders','Orders')}${tabBtn('giftcodes','Gift Codes')}${tabBtn('users','Users')}${tabBtn('failed','Failed Payments')}</div>`;
 }
 function adminHeaderHtml(subtitle){
-  return `<div class="invoice-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;">
-    <div><h2>GiftMint — Owner Dashboard</h2><div class="sub">${subtitle}</div></div>
-    <button onclick="adminLogout()" style="flex-shrink:0;padding:7px 14px;border:1px solid rgba(255,255,255,.5);border-radius:6px;background:rgba(255,255,255,.15);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;">Logout</button>
+  return `<div class="invoice-head admin-head" style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;">
+    <div class="admin-brand">
+      <svg width="32" height="32" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="gmAdmin" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#818CF8"/><stop offset="100%" stop-color="#34D399"/>
+        </linearGradient></defs>
+        <rect width="40" height="40" rx="11" fill="url(#gmAdmin)"/>
+        <rect x="9" y="15" width="22" height="5" rx="2" fill="#fff"/>
+        <rect x="11" y="19" width="18" height="12" rx="2" fill="#fff"/>
+        <rect x="18.5" y="10" width="3" height="21" fill="url(#gmAdmin)"/>
+        <circle cx="30" cy="9" r="2.6" fill="#fff"/>
+      </svg>
+      <div>
+        <div class="logo-word">Gift<span class="mint">Mint</span> <span style="font-weight:500;font-size:13px;opacity:.75;">Owner Dashboard</span></div>
+        <div class="sub">${subtitle}</div>
+      </div>
+    </div>
+    <button onclick="adminLogout()" style="flex-shrink:0;padding:9px 16px;border:none;border-radius:8px;background:rgba(255,255,255,.16);color:#fff;font-size:13px;font-weight:700;cursor:pointer;">Logout</button>
   </div>`;
 }
 function sortIndicator(active, dir){ return active ? (dir === 'asc' ? ' ▲' : ' ▼') : ''; }
