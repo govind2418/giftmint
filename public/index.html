@@ -832,20 +832,31 @@ let adminDateRange = null; // {from, to} in epoch ms, or null for all-time
 let adminCustomFrom = '';
 let adminCustomTo = '';
 
+// The store is Indian, so "today"/"this week"/"this month" must always mean
+// IST's calendar day - not the viewing browser's own local timezone (the
+// admin could be checking the dashboard from anywhere, or their device
+// clock could just be set to a different zone). IST is a fixed UTC+5:30
+// offset with no DST, so this is plain arithmetic on epoch ms, independent
+// of whatever timezone the browser's Date object would otherwise assume.
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+function istDateParts(epochMs){
+  const d = new Date(epochMs + IST_OFFSET_MS);
+  return { y: d.getUTCFullYear(), m: d.getUTCMonth(), day: d.getUTCDate() };
+}
+function istMidnightMs(y, m, day){
+  return Date.UTC(y, m, day) - IST_OFFSET_MS;
+}
 function computePresetRange(preset){
-  const now = new Date();
+  const nowMs = Date.now();
+  const { y, m, day } = istDateParts(nowMs);
   if(preset === 'today'){
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return { from: start.getTime(), to: Date.now() };
+    return { from: istMidnightMs(y, m, day), to: nowMs };
   }
   if(preset === 'week'){
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    start.setDate(start.getDate() - 6);
-    return { from: start.getTime(), to: Date.now() };
+    return { from: istMidnightMs(y, m, day) - 6 * 24 * 60 * 60 * 1000, to: nowMs };
   }
   if(preset === 'month'){
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { from: start.getTime(), to: Date.now() };
+    return { from: istMidnightMs(y, m, 1), to: nowMs };
   }
   return null;
 }
@@ -855,15 +866,17 @@ function setAdminDatePreset(preset){
   loadAdminTab().catch(e => alert(e.message));
 }
 function applyAdminCustomRange(){
-  const fromVal = document.getElementById('adminFromDate').value;
+  const fromVal = document.getElementById('adminFromDate').value; // "YYYY-MM-DD"
   const toVal = document.getElementById('adminToDate').value;
   if(!fromVal || !toVal){ alert('Please pick both a start and end date.'); return; }
   adminCustomFrom = fromVal;
   adminCustomTo = toVal;
   adminDatePreset = 'custom';
+  const [fy, fm, fd] = fromVal.split('-').map(Number);
+  const [ty, tm, td] = toVal.split('-').map(Number);
   adminDateRange = {
-    from: new Date(fromVal + 'T00:00:00').getTime(),
-    to: new Date(toVal + 'T23:59:59.999').getTime()
+    from: istMidnightMs(fy, fm - 1, fd),
+    to: istMidnightMs(ty, tm - 1, td) + 24 * 60 * 60 * 1000 - 1
   };
   loadAdminTab().catch(e => alert(e.message));
 }
