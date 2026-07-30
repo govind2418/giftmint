@@ -229,9 +229,25 @@ function priceWebhookOrder(amount) {
 // webhook-generated order shows up as a normal customer order. Synthetic
 // accounts get a random password (nobody needs to log into them - they
 // exist purely so the order is attributed and visible on the dashboard).
+// Picks an email domain for an auto-created account that looks like a real
+// address instead of an obviously-synthetic one - but deterministically
+// from the slug, so the same payer always lands on the same domain (and
+// therefore the same account) across repeat payments, not a new random one
+// each time. Numeric slugs (a bare phone number, e.g. a VPA with no name
+// in it) get gmail.com specifically - a real person owning the exact same
+// digits as their own Gmail username is rare enough to accept; everyone
+// else is spread across a few other common providers for variety.
+const AUTO_USER_DOMAINS = ['icloud.com', 'outlook.com', 'yahoo.com', 'leelamart.com'];
+function pickAutoUserDomain(slug) {
+  if (/^\d+$/.test(slug)) return 'gmail.com';
+  let hash = 0;
+  for (let i = 0; i < slug.length; i++) hash = (hash * 31 + slug.charCodeAt(i)) >>> 0;
+  return AUTO_USER_DOMAINS[hash % AUTO_USER_DOMAINS.length];
+}
+
 async function findOrCreateAutoUser(name) {
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '') || 'customer';
-  const email = `${slug}@upi.auto`;
+  const email = `${slug}@${pickAutoUserDomain(slug)}`;
   let user = await db.getUserByEmail(email);
   if (!user) {
     const { salt, hash } = auth.hashPassword(auth.newToken());
