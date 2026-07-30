@@ -107,8 +107,11 @@ function newOrderId(prefix) {
   return prefix + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
 }
 
+// Always formats in IST regardless of the server's own OS timezone (e.g.
+// most hosts run in UTC) - without an explicit timeZone, toLocaleString
+// uses the server's local time, which is wrong for Indian customers.
 function formatOrderDate() {
-  return new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
 }
 
 const ADDRESS_POOL = [
