@@ -812,8 +812,64 @@ function adminTabsHtml(){
   const tabBtn = (id, label) => `<button class="btn-buy" style="${adminTab===id ? '' : 'background:#eee;color:#333;'}" onclick="switchAdminTab('${id}')">${label}</button>`;
   return `<div style="display:flex;gap:8px;margin-bottom:16px;">${tabBtn('orders','Orders')}${tabBtn('users','Users')}</div>`;
 }
+
+// ---------- Orders tab: date filter ----------
+let adminDatePreset = 'all';
+let adminDateRange = null; // {from, to} in epoch ms, or null for all-time
+let adminCustomFrom = '';
+let adminCustomTo = '';
+
+function computePresetRange(preset){
+  const now = new Date();
+  if(preset === 'today'){
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return { from: start.getTime(), to: Date.now() };
+  }
+  if(preset === 'week'){
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    start.setDate(start.getDate() - 6);
+    return { from: start.getTime(), to: Date.now() };
+  }
+  if(preset === 'month'){
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { from: start.getTime(), to: Date.now() };
+  }
+  return null;
+}
+function setAdminDatePreset(preset){
+  adminDatePreset = preset;
+  adminDateRange = preset === 'all' ? null : computePresetRange(preset);
+  loadAdminTab().catch(e => alert(e.message));
+}
+function applyAdminCustomRange(){
+  const fromVal = document.getElementById('adminFromDate').value;
+  const toVal = document.getElementById('adminToDate').value;
+  if(!fromVal || !toVal){ alert('Please pick both a start and end date.'); return; }
+  adminCustomFrom = fromVal;
+  adminCustomTo = toVal;
+  adminDatePreset = 'custom';
+  adminDateRange = {
+    from: new Date(fromVal + 'T00:00:00').getTime(),
+    to: new Date(toVal + 'T23:59:59.999').getTime()
+  };
+  loadAdminTab().catch(e => alert(e.message));
+}
+function adminDateFilterHtml(){
+  const presetBtn = (id, label) => `<button class="btn-buy" style="padding:7px 14px;font-size:12.5px;${adminDatePreset===id ? '' : 'background:#eee;color:#333;'}" onclick="setAdminDatePreset('${id}')">${label}</button>`;
+  return `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;padding:12px;background:#f7f3ff;border-radius:8px;">
+      ${presetBtn('all','All Time')}${presetBtn('today','Today')}${presetBtn('week','This Week')}${presetBtn('month','This Month')}
+      <span style="color:var(--muted);font-size:12px;">|</span>
+      <input type="date" id="adminFromDate" value="${adminCustomFrom}" style="padding:6px 8px;border:1px solid #ddd;border-radius:4px;font-size:12.5px;">
+      <span style="color:var(--muted);font-size:12px;">to</span>
+      <input type="date" id="adminToDate" value="${adminCustomTo}" style="padding:6px 8px;border:1px solid #ddd;border-radius:4px;font-size:12.5px;">
+      <button class="btn-buy" style="padding:7px 14px;font-size:12.5px;${adminDatePreset==='custom' ? '' : 'background:#eee;color:#333;'}" onclick="applyAdminCustomRange()">Apply</button>
+    </div>`;
+}
+
 async function renderAdminOrdersTab(){
-  const { orders, stats } = await api('/api/admin/orders');
+  const query = adminDateRange ? `?from=${adminDateRange.from}&to=${adminDateRange.to}` : '';
+  const { orders, stats } = await api('/api/admin/orders' + query);
 
   const rowsHtml = orders.length === 0
     ? `<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--muted);">No orders yet.</td></tr>`
@@ -833,6 +889,7 @@ async function renderAdminOrdersTab(){
     <div class="invoice-head"><h2>Leela Mart — Owner Dashboard</h2><div class="sub">All orders across every customer (persisted on this server)</div></div>
     <div class="invoice-body">
       ${adminTabsHtml()}
+      ${adminDateFilterHtml()}
       <div class="admin-stats">
         <div class="stat-card"><div class="stat-num">${stats.totalOrders}</div><div class="stat-label">Total Orders</div></div>
         <div class="stat-card"><div class="stat-num">₹${stats.totalRevenue.toLocaleString('en-IN')}</div><div class="stat-label">Total Revenue</div></div>
@@ -846,7 +903,7 @@ async function renderAdminOrdersTab(){
     <div class="invoice-footer">
       <button class="btn-close-invoice" onclick="adminLogout()">Logout</button>
       <button class="btn-buy" style="flex:1;" onclick="openOfflineOrderForm()">Add Offline Order</button>
-      <button class="btn-print" onclick="window.location.href='/api/admin/orders/export.csv'">Export CSV</button>
+      <button class="btn-print" onclick="window.location.href='/api/admin/orders/export.csv'+(adminDateRange ? '?from='+adminDateRange.from+'&to='+adminDateRange.to : '')">Export CSV</button>
     </div>`;
 }
 async function renderAdminUsersTab(){

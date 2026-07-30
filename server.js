@@ -529,14 +529,22 @@ router.get('/api/admin/invoice/:orderId', async (req, res, params) => {
 router.get('/api/admin/orders', async (req, res) => {
   if (!(await isAdmin(req))) return sendJson(res, 401, { error: 'Admin login required.' });
   await db.refreshStatuses();
-  const orders = await db.getAllOrders();
-  const orderStats = await db.getOrderStats();
+
+  const parsed = url.parse(req.url, true);
+  const from = parsed.query.from ? Number(parsed.query.from) : null;
+  const to = parsed.query.to ? Number(parsed.query.to) : null;
+  const range = (from != null && to != null && !isNaN(from) && !isNaN(to)) ? { from, to } : null;
+
+  const orders = await db.getAllOrders(range);
+  const orderStats = await db.getOrderStats(range);
   const stats = {
     totalOrders: orderStats.totalOrders,
     totalRevenue: orderStats.totalRevenue,
     processingCount: orderStats.processingCount,
     deliveredCount: orderStats.deliveredCount,
-    totalCustomers: await db.countUsers()
+    // Within a date range, "customers" means distinct buyers in that
+    // window, not the all-time registered count.
+    totalCustomers: range ? new Set(orders.map(o => o.customerEmail)).size : await db.countUsers()
   };
   sendJson(res, 200, { orders, stats });
 });
@@ -571,7 +579,11 @@ router.post('/api/admin/offline-orders', async (req, res) => {
 
 router.get('/api/admin/orders/export.csv', async (req, res) => {
   if (!(await isAdmin(req))) { res.writeHead(401); return res.end('Admin login required.'); }
-  const orders = await db.getAllOrders();
+  const parsed = url.parse(req.url, true);
+  const from = parsed.query.from ? Number(parsed.query.from) : null;
+  const to = parsed.query.to ? Number(parsed.query.to) : null;
+  const range = (from != null && to != null && !isNaN(from) && !isNaN(to)) ? { from, to } : null;
+  const orders = await db.getAllOrders(range);
   const header = ['Order ID', 'Customer Name', 'Customer Email', 'Date', 'Items', 'Item Count', 'Subtotal', 'GST', 'Delivery', 'Grand Total', 'Source', 'Status', 'Delivery Address'];
   const esc = v => {
     const s = String(v);
