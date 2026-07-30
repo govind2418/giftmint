@@ -156,9 +156,18 @@ function extractRazorpayPaymentDetails(body) {
   const entity = body && body.payload && body.payload.payment && body.payload.payment.entity;
   if (entity) {
     const amount = typeof entity.amount === 'number' ? entity.amount / 100 : null;
-    const notesName = entity.notes && (entity.notes.name || entity.notes.customer_name);
+    const notes = entity.notes;
+    const notesName = notes && !Array.isArray(notes) && (notes.name || notes.customer_name);
     const emailName = entity.email ? entity.email.split('@')[0].replace(/[._]+/g, ' ') : null;
-    const name = notesName || emailName || null;
+    // Real Razorpay QR/UPI payments carry no name, email, or contact at
+    // all - the only thing that's ever actually populated is the payer's
+    // VPA (UPI ID, e.g. "raj.kumar-14@okaxis"). Not a real name, but it's
+    // the only field that differs per payer, so it's what attributes each
+    // scan to a distinct "customer" instead of lumping everyone into one
+    // generic account.
+    const vpa = entity.vpa || (entity.upi && entity.upi.vpa);
+    const vpaName = vpa ? vpa.split('@')[0].replace(/[._-]+/g, ' ') : null;
+    const name = notesName || emailName || vpaName || null;
     return { amount, name: name ? toTitleCase(name) : null, event: body.event || null };
   }
   if (body && body.amount != null) {
@@ -594,14 +603,6 @@ router.get('/api/admin/failed-payments', async (req, res) => {
   sendJson(res, 200, { failedPayments });
 });
 
-// TEMPORARY - see the raw payload of the last 20 webhook calls, to figure
-// out what a real QR/UPI payment actually sends.
-router.get('/api/admin/webhook-debug', async (req, res) => {
-  if (!(await isAdmin(req))) return sendJson(res, 401, { error: 'Admin login required.' });
-  const logs = await db.getWebhookDebugLogs();
-  sendJson(res, 200, { logs });
-});
-
 router.post('/api/admin/offline-orders', async (req, res) => {
   if (!(await isAdmin(req))) return sendJson(res, 401, { error: 'Admin login required.' });
   const body = await readJsonBody(req);
@@ -665,12 +666,6 @@ router.get('/api/admin/webhook-info', async (req, res) => {
 // ---------------------------------------------------------------------------
 router.post('/api/webhook/razorpay-payment', async (req, res) => {
   const raw = await readRawBody(req);
-
-  // TEMPORARY: capture the exact raw payload of every webhook call (before
-  // any parsing/validation) so we can see what a real QR/UPI payment
-  // actually contains. Never let a logging failure break the real webhook.
-  db.logWebhookDebug(raw, JSON.stringify(req.headers)).catch(e => console.error('logWebhookDebug failed:', e.message));
-
   let body;
   try { body = raw ? JSON.parse(raw) : {}; }
   catch (e) { return sendJson(res, 400, { error: 'Invalid JSON body' }); }
