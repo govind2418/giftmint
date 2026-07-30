@@ -783,9 +783,11 @@ async function submitAdminLogin(){
     errEl.textContent = e.message; errEl.style.display = "block";
   }
 }
+let adminTab = 'orders';
 async function openAdminDashboard(){
   try{
-    await renderAdminDashboard();
+    adminTab = 'orders';
+    await loadAdminTab();
     document.getElementById('adminOverlay').classList.add('open');
   } catch(e){
     if(e.status === 401) openAdminLogin();
@@ -798,7 +800,19 @@ async function adminLogout(){
   isAdminLoggedIn = false;
   closeAdminDashboard();
 }
-async function renderAdminDashboard(){
+function switchAdminTab(tab){
+  adminTab = tab;
+  loadAdminTab().catch(e => alert(e.message));
+}
+async function loadAdminTab(){
+  if(adminTab === 'users') await renderAdminUsersTab();
+  else await renderAdminOrdersTab();
+}
+function adminTabsHtml(){
+  const tabBtn = (id, label) => `<button class="btn-buy" style="${adminTab===id ? '' : 'background:#eee;color:#333;'}" onclick="switchAdminTab('${id}')">${label}</button>`;
+  return `<div style="display:flex;gap:8px;margin-bottom:16px;">${tabBtn('orders','Orders')}${tabBtn('users','Users')}</div>`;
+}
+async function renderAdminOrdersTab(){
   const { orders, stats } = await api('/api/admin/orders');
 
   const rowsHtml = orders.length === 0
@@ -818,6 +832,7 @@ async function renderAdminDashboard(){
   document.getElementById('adminBox').innerHTML = `
     <div class="invoice-head"><h2>Leela Mart — Owner Dashboard</h2><div class="sub">All orders across every customer (persisted on this server)</div></div>
     <div class="invoice-body">
+      ${adminTabsHtml()}
       <div class="admin-stats">
         <div class="stat-card"><div class="stat-num">${stats.totalOrders}</div><div class="stat-label">Total Orders</div></div>
         <div class="stat-card"><div class="stat-num">₹${stats.totalRevenue.toLocaleString('en-IN')}</div><div class="stat-label">Total Revenue</div></div>
@@ -832,6 +847,42 @@ async function renderAdminDashboard(){
       <button class="btn-close-invoice" onclick="adminLogout()">Logout</button>
       <button class="btn-buy" style="flex:1;" onclick="openOfflineOrderForm()">Add Offline Order</button>
       <button class="btn-print" onclick="window.location.href='/api/admin/orders/export.csv'">Export CSV</button>
+    </div>`;
+}
+async function renderAdminUsersTab(){
+  const { users } = await api('/api/admin/users');
+  const registeredCount = users.filter(u => !u.auto).length;
+  const autoCount = users.filter(u => u.auto).length;
+
+  const rowsHtml = users.length === 0
+    ? `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);">No users yet.</td></tr>`
+    : users.map(u => `
+        <tr>
+          <td>${u.name}<br><small style="color:var(--muted);">${u.email}</small></td>
+          <td>${u.auto
+            ? '<span class="history-status" style="background:#fff3e0;color:#e65100;">Auto (from payment)</span>'
+            : '<span class="history-status delivered" style="background:#e3f2fd;color:#1565c0;">Registered</span>'}</td>
+          <td>${u.orderCount}</td>
+          <td>₹${u.totalSpent.toLocaleString('en-IN')}</td>
+          <td>${new Date(u.createdAt).toLocaleDateString('en-IN')}</td>
+        </tr>`).join('');
+
+  document.getElementById('adminBox').innerHTML = `
+    <div class="invoice-head"><h2>Leela Mart — Owner Dashboard</h2><div class="sub">Every registered account — real signups and auto-created ones from webhook payments</div></div>
+    <div class="invoice-body">
+      ${adminTabsHtml()}
+      <div class="admin-stats">
+        <div class="stat-card"><div class="stat-num">${users.length}</div><div class="stat-label">Total Users</div></div>
+        <div class="stat-card"><div class="stat-num">${registeredCount}</div><div class="stat-label">Registered</div></div>
+        <div class="stat-card"><div class="stat-num">${autoCount}</div><div class="stat-label">Auto (from payment)</div></div>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">"Auto (from payment)" accounts are created automatically when a Razorpay payment or bank notification names someone who isn't already registered. They get a random password nobody knows - they exist only so the order has a name attached and shows up here.</p>
+      <div style="overflow-x:auto;">
+        <table class="invoice-table"><thead><tr><th>User</th><th>Type</th><th>Orders</th><th>Total Spent</th><th>Joined</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+      </div>
+    </div>
+    <div class="invoice-footer">
+      <button class="btn-close-invoice" onclick="adminLogout()">Logout</button>
     </div>`;
 }
 function openOfflineOrderForm(){

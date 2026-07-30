@@ -541,6 +541,12 @@ router.get('/api/admin/orders', async (req, res) => {
   sendJson(res, 200, { orders, stats });
 });
 
+router.get('/api/admin/users', async (req, res) => {
+  if (!(await isAdmin(req))) return sendJson(res, 401, { error: 'Admin login required.' });
+  const users = await db.getAllUsersWithStats();
+  sendJson(res, 200, { users });
+});
+
 router.post('/api/admin/offline-orders', async (req, res) => {
   if (!(await isAdmin(req))) return sendJson(res, 401, { error: 'Admin login required.' });
   const body = await readJsonBody(req);
