@@ -824,6 +824,12 @@ function adminTabsHtml(){
   const tabBtn = (id, label) => `<button class="btn-buy" style="${adminTab===id ? '' : 'background:#eee;color:#333;'}" onclick="switchAdminTab('${id}')">${label}</button>`;
   return `<div style="display:flex;gap:8px;margin-bottom:16px;">${tabBtn('orders','Orders')}${tabBtn('users','Users')}${tabBtn('failed','Failed Payments')}</div>`;
 }
+function adminHeaderHtml(subtitle){
+  return `<div class="invoice-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;">
+    <div><h2>Leela Mart — Owner Dashboard</h2><div class="sub">${subtitle}</div></div>
+    <button onclick="adminLogout()" style="flex-shrink:0;padding:7px 14px;border:1px solid rgba(255,255,255,.5);border-radius:6px;background:rgba(255,255,255,.15);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;">Logout</button>
+  </div>`;
+}
 function sortIndicator(active, dir){ return active ? (dir === 'asc' ? ' ▲' : ' ▼') : ''; }
 
 // ---------- Orders tab: date filter ----------
@@ -954,7 +960,7 @@ async function renderAdminOrdersTab(){
   adminOrdersRaw = orders;
 
   document.getElementById('adminBox').innerHTML = `
-    <div class="invoice-head"><h2>Leela Mart — Owner Dashboard</h2><div class="sub">All orders across every customer (persisted on this server)</div></div>
+    ${adminHeaderHtml('All orders across every customer (persisted on this server)')}
     <div class="invoice-body">
       ${adminTabsHtml()}
       ${adminDateFilterHtml()}
@@ -968,7 +974,6 @@ async function renderAdminOrdersTab(){
       <div id="adminOrdersTableWrap" style="overflow-x:auto;"></div>
     </div>
     <div class="invoice-footer">
-      <button class="btn-close-invoice" onclick="adminLogout()">Logout</button>
       <button class="btn-buy" style="flex:1;" onclick="openOfflineOrderForm()">Add Offline Order</button>
       <button class="btn-print" onclick="window.location.href='/api/admin/orders/export.csv'+(adminDateRange ? '?from='+adminDateRange.from+'&to='+adminDateRange.to : '')">Export CSV</button>
     </div>`;
@@ -1032,7 +1037,7 @@ async function renderAdminUsersTab(){
   const autoCount = users.filter(u => u.auto).length;
 
   document.getElementById('adminBox').innerHTML = `
-    <div class="invoice-head"><h2>Leela Mart — Owner Dashboard</h2><div class="sub">Every registered account — real signups and auto-created ones from webhook payments</div></div>
+    ${adminHeaderHtml('Every registered account — real signups and auto-created ones from webhook payments')}
     <div class="invoice-body">
       ${adminTabsHtml()}
       <div class="admin-stats">
@@ -1043,9 +1048,6 @@ async function renderAdminUsersTab(){
       <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">"Auto (from payment)" accounts are created automatically when a Razorpay payment or bank notification names someone who isn't already registered. They get a random password nobody knows - they exist only so the order has a name attached and shows up here.</p>
       <input type="text" id="adminUserSearchInput" placeholder="Search by name or email..." oninput="setAdminUserSearch(this.value)" style="width:100%;max-width:360px;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:12px;">
       <div id="adminUsersTableWrap" style="overflow-x:auto;"></div>
-    </div>
-    <div class="invoice-footer">
-      <button class="btn-close-invoice" onclick="adminLogout()">Logout</button>
     </div>`;
   renderAdminUsersTableWrap();
 }
@@ -1064,7 +1066,7 @@ async function renderAdminFailedTab(){
         </tr>`).join('');
 
   document.getElementById('adminBox').innerHTML = `
-    <div class="invoice-head"><h2>Leela Mart — Owner Dashboard</h2><div class="sub">Payments Razorpay reported as failed - these never became orders</div></div>
+    ${adminHeaderHtml('Payments Razorpay reported as failed - these never became orders')}
     <div class="invoice-body">
       ${adminTabsHtml()}
       <div class="admin-stats">
@@ -1073,9 +1075,6 @@ async function renderAdminFailedTab(){
       <div style="overflow-x:auto;">
         <table class="invoice-table"><thead><tr><th>Payment ID</th><th>Amount</th><th>Customer</th><th>Reason</th><th>When</th></tr></thead><tbody>${rowsHtml}</tbody></table>
       </div>
-    </div>
-    <div class="invoice-footer">
-      <button class="btn-close-invoice" onclick="adminLogout()">Logout</button>
     </div>`;
 }
 function openOfflineOrderForm(){
@@ -1134,6 +1133,15 @@ async function init(){
   renderProducts();
   renderCart();
   setInterval(tickOrders, 1000);
+
+  // If the owner still has a valid (not idle-expired) admin session,
+  // reopen the dashboard with fresh data instead of dropping them back to
+  // the storefront - a page refresh shouldn't look like being logged out.
+  try{
+    await api('/api/admin/me');
+    isAdminLoggedIn = true;
+    openAdminDashboard();
+  } catch(e){}
 }
 init();
 </script>

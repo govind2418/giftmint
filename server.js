@@ -491,6 +491,14 @@ router.post('/api/admin/logout', async (req, res) => {
   sendJson(res, 200, { ok: true });
 });
 
+// Cheap check the frontend calls on page load to tell whether the owner is
+// still validly logged in (and, since isAdmin() renews the idle timer,
+// this call itself counts as activity).
+router.get('/api/admin/me', async (req, res) => {
+  if (!(await isAdmin(req))) return sendJson(res, 401, { error: 'Not logged in.' });
+  sendJson(res, 200, { ok: true });
+});
+
 // Renders a standalone, print-ready Tax Invoice page for one order. Works
 // for every order (self-placed, offline, or Razorpay) since it's looked up
 // from the admin's own view rather than a customer session - the
