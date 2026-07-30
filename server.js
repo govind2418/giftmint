@@ -118,6 +118,44 @@ function toTitleCase(s) {
   return String(s).trim().replace(/\s+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
+// A payer's VPA/email local-part is often nothing but digits (a bare phone
+// number, e.g. "9876543210@okaxis") or a name with a stray numeric suffix
+// (e.g. "raj.kumar24@okaxis") - neither looks right as someone's "name" on
+// an invoice. Picked deterministically from the raw identifier (not
+// Math.random) so the same payer always gets the same stand-in name across
+// repeat payments, same as pickAutoUserDomain below.
+const INDIAN_NAME_POOL = [
+  'Aarav Sharma', 'Priya Patel', 'Rohan Gupta', 'Ananya Singh', 'Vikram Rao',
+  'Sneha Iyer', 'Karan Mehta', 'Divya Nair', 'Arjun Reddy', 'Neha Joshi',
+  'Aditya Kumar', 'Pooja Verma', 'Rahul Desai', 'Kavita Menon', 'Suresh Pillai'
+];
+function pickIndianName(seed) {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  return INDIAN_NAME_POOL[hash % INDIAN_NAME_POOL.length];
+}
+
+// Turns a raw slug guess (VPA/email local-part) into a presentable display
+// name: strips digits entirely (never shows "Raj24" or a bare "9876543210"
+// as a name), and falls back to a stand-in Indian name if nothing
+// alphabetic survives the strip.
+function cleanGuessedName(rawIdentifier) {
+  const cleaned = rawIdentifier
+    .replace(/[._-]+/g, ' ')
+    .replace(/\d+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned ? toTitleCase(cleaned) : pickIndianName(rawIdentifier);
+}
+
+// Masks a phone number for display, e.g. "9876543210" -> "9876xxxx10" -
+// keeps enough at each end to be recognizable without exposing the full
+// number on a printable invoice.
+function maskPhone(digits) {
+  if (!digits || digits.length <= 6) return digits || '';
+  return digits.slice(0, 4) + 'x'.repeat(digits.length - 6) + digits.slice(-2);
+}
+
 // Pulls the payer name + paid amount (in rupees) out of a Razorpay
 // `payment.captured` webhook payload. Also accepts a flat {name, amount}
 // body so the flow can be smoke-tested with curl before Razorpay is wired up.
@@ -127,7 +165,7 @@ function extractRazorpayPaymentDetails(body) {
     const amount = typeof entity.amount === 'number' ? entity.amount / 100 : null;
     const notes = entity.notes;
     const notesName = notes && !Array.isArray(notes) && (notes.name || notes.customer_name);
-    const emailName = entity.email ? entity.email.split('@')[0].replace(/[._]+/g, ' ') : null;
+    const emailLocal = entity.email ? entity.email.split('@')[0] : null;
     // Real Razorpay QR/UPI payments carry no name, email, or contact at
     // all - the only thing that's ever actually populated is the payer's
     // VPA (UPI ID, e.g. "raj.kumar-14@okaxis"). Not a real name, but it's
@@ -135,14 +173,21 @@ function extractRazorpayPaymentDetails(body) {
     // scan to a distinct "customer" instead of lumping everyone into one
     // generic account.
     const vpa = entity.vpa || (entity.upi && entity.upi.vpa);
-    const vpaName = vpa ? vpa.split('@')[0].replace(/[._-]+/g, ' ') : null;
-    const name = notesName || emailName || vpaName || null;
-    return { amount, name: name ? toTitleCase(name) : null, event: body.event || null };
+    const vpaLocal = vpa ? vpa.split('@')[0] : null;
+    // `slug` is the raw, uncleaned identifier used to key the auto-created
+    // account (so repeat payments from the same VPA always land on the same
+    // account) - kept separate from `name`, the cosmetic cleaned-up version
+    // shown on invoices/dashboards.
+    const slug = notesName || emailLocal || vpaLocal || null;
+    const name = notesName ? toTitleCase(notesName) : (slug ? cleanGuessedName(slug) : null);
+    const contact = entity.contact ? String(entity.contact).replace(/\D/g, '') : null;
+    return { amount, name, slug, contact, event: body.event || null };
   }
   if (body && body.amount != null) {
-    return { amount: Number(body.amount), name: body.name ? toTitleCase(body.name) : null, event: 'manual' };
+    const name = body.name ? toTitleCase(body.name) : null;
+    return { amount: Number(body.amount), name, slug: name, contact: null, event: 'manual' };
   }
-  return { amount: null, name: null, event: null };
+  return { amount: null, name: null, slug: null, contact: null, event: null };
 }
 
 // Invents a gift code for a platform+denomination and inserts it (already
@@ -168,7 +213,7 @@ async function generateSyntheticCode(conn, platform, denomination, orderId) {
 // (the real money is the only source of truth), and mints a one-off
 // synthetic code for it - never one of the real codes reserved for
 // authenticated, logged-in buyers.
-async function synthesizeGiftCodeOrder({ amount, name, userEmail, customerEmail, source, offline }) {
+async function synthesizeGiftCodeOrder({ amount, name, userEmail, customerEmail, source, offline, contact }) {
   const denomination = Math.max(1, Math.round(amount));
   const platform = PLATFORMS[Math.floor(Math.random() * PLATFORMS.length)];
   const orderId = newOrderId(offline ? 'GM-OFF' : 'GM-RP');
@@ -180,7 +225,8 @@ async function synthesizeGiftCodeOrder({ amount, name, userEmail, customerEmail,
       address: 'Digital delivery', items: [{ platform: platform.id, platformName: platform.name, denomination, code }],
       subtotal: denomination, tax: 0, delivery: 0, grandTotal: denomination,
       status: 'Delivered', offline: !!offline, source,
-      userEmail: userEmail || null, customerName: name, customerEmail: customerEmail || '—'
+      userEmail: userEmail || null, customerName: name, customerEmail: customerEmail || '—',
+      contact: contact || null
     };
     await db.createOrder(order, conn);
     return order;
@@ -207,15 +253,20 @@ function pickAutoUserDomain(slug) {
   return AUTO_USER_DOMAINS[hash % AUTO_USER_DOMAINS.length];
 }
 
-async function findOrCreateAutoUser(name) {
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '') || 'customer';
+// `identitySlug` is the raw, uncleaned VPA/email/name text - it decides
+// which account a payment lands on, so it must stay identical across repeat
+// payments from the same payer. `displayName` is only the cosmetic name
+// stored on that account (may be a stand-in name if identitySlug was just
+// digits) - never used for the email/dedup key itself.
+async function findOrCreateAutoUser(identitySlug, displayName) {
+  const slug = identitySlug.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '') || 'customer';
   const email = `${slug}@${pickAutoUserDomain(slug)}`;
   let user = await db.getUserByEmail(email);
   if (!user) {
     const { salt, hash } = auth.hashPassword(auth.newToken());
     try {
-      await db.createUser({ email, name, passwordSalt: salt, passwordHash: hash, auto: true });
-      user = { email, name, passwordSalt: salt, passwordHash: hash, auto: true };
+      await db.createUser({ email, name: displayName, passwordSalt: salt, passwordHash: hash, auto: true });
+      user = { email, name: displayName, passwordSalt: salt, passwordHash: hash, auto: true };
     } catch (e) {
       // Two payments for the same person landed at the same instant and
       // both tried to create this account - the other one won, so just use
@@ -610,6 +661,7 @@ function renderInvoiceHtml(o) {
     <div class="box"><h4>Billed To</h4><p>${esc(o.customerName)}<br>${esc(o.customerEmail)}</p></div>
     <div class="box"><h4>Delivery</h4><p>Digital &mdash; code(s) below</p></div>
     <div class="box"><h4>Source</h4><p>${esc(o.offline ? 'Offline' : 'Online')}${o.source ? ' &middot; ' + esc(ORDER_SOURCE_LABELS[o.source] || o.source) : ''}</p></div>
+    ${o.contact ? `<div class="box"><h4>Contact</h4><p>${esc(maskPhone(o.contact))}</p></div>` : ''}
   </div>
   <table><thead><tr><th>Gift Card</th><th>Value</th><th>Code</th></tr></thead><tbody>${rows}</tbody></table>
   <div class="totals">
@@ -840,10 +892,11 @@ router.post('/api/webhook/razorpay-payment', async (req, res) => {
   }
 
   const name = details.name || 'Razorpay Customer';
-  const user = await findOrCreateAutoUser(name);
+  const identitySlug = details.slug || name;
+  const user = await findOrCreateAutoUser(identitySlug, name);
   const order = await synthesizeGiftCodeOrder({
     amount: details.amount, name: user.name, userEmail: user.email, customerEmail: user.email,
-    offline: false, source: 'razorpay-webhook'
+    offline: false, source: 'razorpay-webhook', contact: details.contact
   });
   sendJson(res, 200, {
     ok: true, amount: details.amount, name: user.name, email: user.email,
