@@ -100,8 +100,11 @@ function computeItemsFromCart(cartItems) {
   return items;
 }
 
+// Timestamp + 4 random bytes of entropy - safe against collisions even
+// when many orders (e.g. a burst of webhook payments) are created in the
+// same millisecond, unlike a plain Date.now() slice.
 function newOrderId(prefix) {
-  return prefix + Date.now().toString().slice(-8) + Math.floor(Math.random() * 90 + 10);
+  return prefix + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
 }
 
 function formatOrderDate() {
@@ -209,8 +212,16 @@ async function findOrCreateAutoUser(name) {
   let user = await db.getUserByEmail(email);
   if (!user) {
     const { salt, hash } = auth.hashPassword(auth.newToken());
-    await db.createUser({ email, name, passwordSalt: salt, passwordHash: hash, auto: true });
-    user = { email, name, passwordSalt: salt, passwordHash: hash, auto: true };
+    try {
+      await db.createUser({ email, name, passwordSalt: salt, passwordHash: hash, auto: true });
+      user = { email, name, passwordSalt: salt, passwordHash: hash, auto: true };
+    } catch (e) {
+      // Two payments for the same person landed at the same instant and
+      // both tried to create this account - the other one won, so just use
+      // what it created instead of failing this request.
+      if (e.code !== 'ER_DUP_ENTRY') throw e;
+      user = await db.getUserByEmail(email);
+    }
   }
   return user;
 }
@@ -566,7 +577,7 @@ router.post('/api/admin/offline-orders', async (req, res) => {
   if (!amount || amount <= 0) return sendJson(res, 400, { error: 'Please enter a valid amount.' });
 
   const order = {
-    orderId: 'LM-OFF' + Date.now().toString().slice(-6), orderDate: formatOrderDate(), createdAt: Date.now(),
+    orderId: newOrderId('LM-OFF'), orderDate: formatOrderDate(), createdAt: Date.now(),
     address: 'N/A — Offline / in-store payment',
     items: [{ name: note, qty: 1, price: amount }],
     subtotal: amount, tax: 0, delivery: 0, grandTotal: amount,
@@ -655,7 +666,7 @@ router.post('/api/webhook/razorpay-payment', async (req, res) => {
   const priced = priceWebhookOrder(details.amount);
 
   const order = {
-    orderId: 'LM-RP' + Date.now().toString().slice(-6), orderDate: formatOrderDate(), createdAt: Date.now(),
+    orderId: newOrderId('LM-RP'), orderDate: formatOrderDate(), createdAt: Date.now(),
     address: randomAddress(),
     items: priced.items, subtotal: priced.subtotal, tax: priced.tax, delivery: priced.delivery, grandTotal: priced.grandTotal,
     deliverAt: Date.now() + DELIVERY_WAIT_MS,
