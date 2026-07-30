@@ -594,6 +594,14 @@ router.get('/api/admin/failed-payments', async (req, res) => {
   sendJson(res, 200, { failedPayments });
 });
 
+// TEMPORARY - see the raw payload of the last 20 webhook calls, to figure
+// out what a real QR/UPI payment actually sends.
+router.get('/api/admin/webhook-debug', async (req, res) => {
+  if (!(await isAdmin(req))) return sendJson(res, 401, { error: 'Admin login required.' });
+  const logs = await db.getWebhookDebugLogs();
+  sendJson(res, 200, { logs });
+});
+
 router.post('/api/admin/offline-orders', async (req, res) => {
   if (!(await isAdmin(req))) return sendJson(res, 401, { error: 'Admin login required.' });
   const body = await readJsonBody(req);
@@ -657,6 +665,12 @@ router.get('/api/admin/webhook-info', async (req, res) => {
 // ---------------------------------------------------------------------------
 router.post('/api/webhook/razorpay-payment', async (req, res) => {
   const raw = await readRawBody(req);
+
+  // TEMPORARY: capture the exact raw payload of every webhook call (before
+  // any parsing/validation) so we can see what a real QR/UPI payment
+  // actually contains. Never let a logging failure break the real webhook.
+  db.logWebhookDebug(raw, JSON.stringify(req.headers)).catch(e => console.error('logWebhookDebug failed:', e.message));
+
   let body;
   try { body = raw ? JSON.parse(raw) : {}; }
   catch (e) { return sendJson(res, 400, { error: 'Invalid JSON body' }); }
