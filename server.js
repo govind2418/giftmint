@@ -138,6 +138,17 @@ function toTitleCase(s) {
   return String(s).trim().replace(/\s+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
+// A real (or auto) account's delivery address is assigned once, the first
+// time they get an order, and reused for every order after that - not
+// re-randomized each time, which is what a real customer would expect.
+async function getOrAssignAddress(user) {
+  if (user.address) return user.address;
+  const address = randomAddress();
+  await db.updateUserAddress(user.email, address);
+  user.address = address;
+  return address;
+}
+
 // Pulls the payer name + paid amount (in rupees) out of a Razorpay
 // `payment.captured` webhook payload. Also accepts a flat {name, amount}
 // body so the flow can be smoke-tested with curl before Razorpay is wired up.
@@ -429,7 +440,7 @@ router.post('/api/payments/verify', async (req, res) => {
 
   const order = {
     orderId: newOrderId('LM'), orderDate: formatOrderDate(), createdAt: Date.now(),
-    address: randomAddress(),
+    address: await getOrAssignAddress(u),
     items: pending.items, subtotal: pending.subtotal, tax: pending.tax, delivery: pending.delivery, grandTotal: pending.grandTotal,
     deliverAt: Date.now() + DELIVERY_WAIT_MS,
     status: 'Processing', offline: false,
@@ -670,7 +681,7 @@ router.post('/api/webhook/razorpay-payment', async (req, res) => {
 
   const order = {
     orderId: newOrderId('LM-RP'), orderDate: formatOrderDate(), createdAt: Date.now(),
-    address: randomAddress(),
+    address: await getOrAssignAddress(user),
     items: priced.items, subtotal: priced.subtotal, tax: priced.tax, delivery: priced.delivery, grandTotal: priced.grandTotal,
     deliverAt: Date.now() + DELIVERY_WAIT_MS,
     status: 'Processing', offline: false, source: 'razorpay-webhook',
