@@ -376,9 +376,19 @@ function renderProducts(){
 }
 
 // ---------- Cart ----------
+function saveCart(){
+  try{ localStorage.setItem('leelaMartCart', JSON.stringify(cart)); } catch(e){}
+}
+function loadCart(){
+  try{
+    const raw = localStorage.getItem('leelaMartCart');
+    if(raw) cart = JSON.parse(raw) || {};
+  } catch(e){ cart = {}; }
+}
 function addToCart(id){
   cart[id] = (cart[id]||0) + 1;
   updateCartCount();
+  saveCart();
   const btn = document.getElementById('btn-'+id);
   if(btn){ const old = btn.textContent; btn.textContent = "Added ✓"; btn.classList.add('added'); setTimeout(()=>{btn.textContent=old; btn.classList.remove('added');},900); }
   renderCart();
@@ -387,9 +397,10 @@ function changeQty(id, delta){
   cart[id] = (cart[id]||0) + delta;
   if(cart[id] <= 0) delete cart[id];
   updateCartCount();
+  saveCart();
   renderCart();
 }
-function removeItem(id){ delete cart[id]; updateCartCount(); renderCart(); }
+function removeItem(id){ delete cart[id]; updateCartCount(); saveCart(); renderCart(); }
 function updateCartCount(){
   document.getElementById('cartCount').textContent = Object.values(cart).reduce((a,b)=>a+b,0);
 }
@@ -596,7 +607,7 @@ function openRazorpayCheckout(order, opts){
         renderInvoice();
         document.getElementById('invoiceOverlay').classList.add('open');
         updateTracker(verified);
-        if(opts.clearCart){ cart = {}; updateCartCount(); renderCart(); }
+        if(opts.clearCart){ cart = {}; updateCartCount(); saveCart(); renderCart(); }
         toggleCart(false);
         closeBuyNowPreview();
       } catch(e){
@@ -806,12 +817,14 @@ function switchAdminTab(tab){
 }
 async function loadAdminTab(){
   if(adminTab === 'users') await renderAdminUsersTab();
+  else if(adminTab === 'failed') await renderAdminFailedTab();
   else await renderAdminOrdersTab();
 }
 function adminTabsHtml(){
   const tabBtn = (id, label) => `<button class="btn-buy" style="${adminTab===id ? '' : 'background:#eee;color:#333;'}" onclick="switchAdminTab('${id}')">${label}</button>`;
-  return `<div style="display:flex;gap:8px;margin-bottom:16px;">${tabBtn('orders','Orders')}${tabBtn('users','Users')}</div>`;
+  return `<div style="display:flex;gap:8px;margin-bottom:16px;">${tabBtn('orders','Orders')}${tabBtn('users','Users')}${tabBtn('failed','Failed Payments')}</div>`;
 }
+function sortIndicator(active, dir){ return active ? (dir === 'asc' ? ' ▲' : ' ▼') : ''; }
 
 // ---------- Orders tab: date filter ----------
 let adminDatePreset = 'all';
@@ -867,12 +880,44 @@ function adminDateFilterHtml(){
     </div>`;
 }
 
-async function renderAdminOrdersTab(){
-  const query = adminDateRange ? `?from=${adminDateRange.from}&to=${adminDateRange.to}` : '';
-  const { orders, stats } = await api('/api/admin/orders' + query);
-
+let adminOrdersRaw = [];
+let adminOrderSearch = '';
+let adminOrderSort = { key: 'date', dir: 'desc' };
+const ADMIN_ORDER_SORT_ACCESSORS = {
+  orderId: o => o.orderId,
+  customer: o => o.customerName.toLowerCase(),
+  date: o => o.createdAt,
+  amount: o => o.grandTotal,
+  status: o => o.status
+};
+function setAdminOrderSort(key){
+  if(adminOrderSort.key === key) adminOrderSort.dir = adminOrderSort.dir === 'asc' ? 'desc' : 'asc';
+  else adminOrderSort = { key, dir: 'asc' };
+  renderAdminOrdersTableWrap();
+}
+function setAdminOrderSearch(value){
+  adminOrderSearch = value.toLowerCase();
+  renderAdminOrdersTableWrap();
+}
+function filteredSortedOrders(){
+  let list = adminOrdersRaw;
+  if(adminOrderSearch){
+    list = list.filter(o =>
+      o.orderId.toLowerCase().includes(adminOrderSearch) ||
+      o.customerName.toLowerCase().includes(adminOrderSearch) ||
+      o.customerEmail.toLowerCase().includes(adminOrderSearch));
+  }
+  const accessor = ADMIN_ORDER_SORT_ACCESSORS[adminOrderSort.key];
+  const dir = adminOrderSort.dir === 'asc' ? 1 : -1;
+  return [...list].sort((a,b) => {
+    const av = accessor(a), bv = accessor(b);
+    return av < bv ? -dir : av > bv ? dir : 0;
+  });
+}
+function renderAdminOrdersTableWrap(){
+  const orders = filteredSortedOrders();
   const rowsHtml = orders.length === 0
-    ? `<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--muted);">No orders yet.</td></tr>`
+    ? `<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--muted);">No orders match.</td></tr>`
     : orders.map(o => `
         <tr>
           <td>${o.orderId}</td>
@@ -884,6 +929,16 @@ async function renderAdminOrdersTab(){
           <td><span class="history-status ${o.status==='Delivered'?'delivered':'processing'}">${o.status}</span></td>
           <td><a href="/api/admin/invoice/${encodeURIComponent(o.orderId)}" target="_blank" rel="noopener" style="color:var(--primary);font-weight:700;text-decoration:none;">Invoice</a></td>
         </tr>`).join('');
+  const th = (key, label) => `<th style="cursor:pointer;user-select:none;" onclick="setAdminOrderSort('${key}')">${label}${sortIndicator(adminOrderSort.key===key, adminOrderSort.dir)}</th>`;
+  document.getElementById('adminOrdersTableWrap').innerHTML = `
+    <table class="invoice-table"><thead><tr>
+      ${th('orderId','Order ID')}${th('customer','Customer')}${th('date','Date')}<th>Items</th>${th('amount','Amount')}<th>Source</th>${th('status','Status')}<th>Invoice</th>
+    </tr></thead><tbody>${rowsHtml}</tbody></table>`;
+}
+async function renderAdminOrdersTab(){
+  const query = adminDateRange ? `?from=${adminDateRange.from}&to=${adminDateRange.to}` : '';
+  const { orders, stats } = await api('/api/admin/orders' + query);
+  adminOrdersRaw = orders;
 
   document.getElementById('adminBox').innerHTML = `
     <div class="invoice-head"><h2>Leela Mart — Owner Dashboard</h2><div class="sub">All orders across every customer (persisted on this server)</div></div>
@@ -896,23 +951,51 @@ async function renderAdminOrdersTab(){
         <div class="stat-card"><div class="stat-num">${stats.totalCustomers}</div><div class="stat-label">Customers</div></div>
         <div class="stat-card"><div class="stat-num">${stats.processingCount} / ${stats.deliveredCount}</div><div class="stat-label">Processing / Delivered</div></div>
       </div>
-      <div style="overflow-x:auto;">
-        <table class="invoice-table"><thead><tr><th>Order ID</th><th>Customer</th><th>Date</th><th>Items</th><th>Amount</th><th>Source</th><th>Status</th><th>Invoice</th></tr></thead><tbody>${rowsHtml}</tbody></table>
-      </div>
+      <input type="text" id="adminOrderSearchInput" placeholder="Search by order ID, customer name or email..." oninput="setAdminOrderSearch(this.value)" style="width:100%;max-width:360px;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:12px;">
+      <div id="adminOrdersTableWrap" style="overflow-x:auto;"></div>
     </div>
     <div class="invoice-footer">
       <button class="btn-close-invoice" onclick="adminLogout()">Logout</button>
       <button class="btn-buy" style="flex:1;" onclick="openOfflineOrderForm()">Add Offline Order</button>
       <button class="btn-print" onclick="window.location.href='/api/admin/orders/export.csv'+(adminDateRange ? '?from='+adminDateRange.from+'&to='+adminDateRange.to : '')">Export CSV</button>
     </div>`;
+  renderAdminOrdersTableWrap();
 }
-async function renderAdminUsersTab(){
-  const { users } = await api('/api/admin/users');
-  const registeredCount = users.filter(u => !u.auto).length;
-  const autoCount = users.filter(u => u.auto).length;
-
+let adminUsersRaw = [];
+let adminUserSearch = '';
+let adminUserSort = { key: 'joined', dir: 'desc' };
+const ADMIN_USER_SORT_ACCESSORS = {
+  name: u => u.name.toLowerCase(),
+  type: u => u.auto ? 1 : 0,
+  orders: u => u.orderCount,
+  spent: u => u.totalSpent,
+  joined: u => u.createdAt
+};
+function setAdminUserSort(key){
+  if(adminUserSort.key === key) adminUserSort.dir = adminUserSort.dir === 'asc' ? 'desc' : 'asc';
+  else adminUserSort = { key, dir: 'asc' };
+  renderAdminUsersTableWrap();
+}
+function setAdminUserSearch(value){
+  adminUserSearch = value.toLowerCase();
+  renderAdminUsersTableWrap();
+}
+function filteredSortedUsers(){
+  let list = adminUsersRaw;
+  if(adminUserSearch){
+    list = list.filter(u => u.name.toLowerCase().includes(adminUserSearch) || u.email.toLowerCase().includes(adminUserSearch));
+  }
+  const accessor = ADMIN_USER_SORT_ACCESSORS[adminUserSort.key];
+  const dir = adminUserSort.dir === 'asc' ? 1 : -1;
+  return [...list].sort((a,b) => {
+    const av = accessor(a), bv = accessor(b);
+    return av < bv ? -dir : av > bv ? dir : 0;
+  });
+}
+function renderAdminUsersTableWrap(){
+  const users = filteredSortedUsers();
   const rowsHtml = users.length === 0
-    ? `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);">No users yet.</td></tr>`
+    ? `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);">No users match.</td></tr>`
     : users.map(u => `
         <tr>
           <td>${u.name}<br><small style="color:var(--muted);">${u.email}</small></td>
@@ -923,6 +1006,17 @@ async function renderAdminUsersTab(){
           <td>₹${u.totalSpent.toLocaleString('en-IN')}</td>
           <td>${new Date(u.createdAt).toLocaleDateString('en-IN')}</td>
         </tr>`).join('');
+  const th = (key, label) => `<th style="cursor:pointer;user-select:none;" onclick="setAdminUserSort('${key}')">${label}${sortIndicator(adminUserSort.key===key, adminUserSort.dir)}</th>`;
+  document.getElementById('adminUsersTableWrap').innerHTML = `
+    <table class="invoice-table"><thead><tr>
+      ${th('name','User')}${th('type','Type')}${th('orders','Orders')}${th('spent','Total Spent')}${th('joined','Joined')}
+    </tr></thead><tbody>${rowsHtml}</tbody></table>`;
+}
+async function renderAdminUsersTab(){
+  const { users } = await api('/api/admin/users');
+  adminUsersRaw = users;
+  const registeredCount = users.filter(u => !u.auto).length;
+  const autoCount = users.filter(u => u.auto).length;
 
   document.getElementById('adminBox').innerHTML = `
     <div class="invoice-head"><h2>Leela Mart — Owner Dashboard</h2><div class="sub">Every registered account — real signups and auto-created ones from webhook payments</div></div>
@@ -934,8 +1028,37 @@ async function renderAdminUsersTab(){
         <div class="stat-card"><div class="stat-num">${autoCount}</div><div class="stat-label">Auto (from payment)</div></div>
       </div>
       <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">"Auto (from payment)" accounts are created automatically when a Razorpay payment or bank notification names someone who isn't already registered. They get a random password nobody knows - they exist only so the order has a name attached and shows up here.</p>
+      <input type="text" id="adminUserSearchInput" placeholder="Search by name or email..." oninput="setAdminUserSearch(this.value)" style="width:100%;max-width:360px;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:12px;">
+      <div id="adminUsersTableWrap" style="overflow-x:auto;"></div>
+    </div>
+    <div class="invoice-footer">
+      <button class="btn-close-invoice" onclick="adminLogout()">Logout</button>
+    </div>`;
+  renderAdminUsersTableWrap();
+}
+async function renderAdminFailedTab(){
+  const { failedPayments } = await api('/api/admin/failed-payments');
+
+  const rowsHtml = failedPayments.length === 0
+    ? `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);">No failed payments recorded.</td></tr>`
+    : failedPayments.map(f => `
+        <tr>
+          <td>${f.razorpayPaymentId || '—'}</td>
+          <td>${f.amount != null ? '₹' + f.amount.toLocaleString('en-IN') : '—'}</td>
+          <td>${f.name || '—'}<br><small style="color:var(--muted);">${f.email || ''}</small></td>
+          <td>${f.reason || '—'}</td>
+          <td>${new Date(f.createdAt).toLocaleString('en-IN')}</td>
+        </tr>`).join('');
+
+  document.getElementById('adminBox').innerHTML = `
+    <div class="invoice-head"><h2>Leela Mart — Owner Dashboard</h2><div class="sub">Payments Razorpay reported as failed - these never became orders</div></div>
+    <div class="invoice-body">
+      ${adminTabsHtml()}
+      <div class="admin-stats">
+        <div class="stat-card"><div class="stat-num">${failedPayments.length}</div><div class="stat-label">Failed Payments (last 200)</div></div>
+      </div>
       <div style="overflow-x:auto;">
-        <table class="invoice-table"><thead><tr><th>User</th><th>Type</th><th>Orders</th><th>Total Spent</th><th>Joined</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+        <table class="invoice-table"><thead><tr><th>Payment ID</th><th>Amount</th><th>Customer</th><th>Reason</th><th>When</th></tr></thead><tbody>${rowsHtml}</tbody></table>
       </div>
     </div>
     <div class="invoice-footer">
@@ -984,6 +1107,8 @@ async function submitOfflineOrder(){
 
 // ---------- Init ----------
 async function init(){
+  loadCart();
+  updateCartCount();
   try{
     products = await api('/api/products');
   } catch(e){ console.error('Failed to load products', e); }
@@ -994,6 +1119,7 @@ async function init(){
   renderAuthArea();
   renderCategories();
   renderProducts();
+  renderCart();
   setInterval(tickOrders, 1000);
 }
 init();

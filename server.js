@@ -580,6 +580,12 @@ router.get('/api/admin/users', async (req, res) => {
   sendJson(res, 200, { users });
 });
 
+router.get('/api/admin/failed-payments', async (req, res) => {
+  if (!(await isAdmin(req))) return sendJson(res, 401, { error: 'Admin login required.' });
+  const failedPayments = await db.getFailedPayments();
+  sendJson(res, 200, { failedPayments });
+});
+
 router.post('/api/admin/offline-orders', async (req, res) => {
   if (!(await isAdmin(req))) return sendJson(res, 401, { error: 'Admin login required.' });
   const body = await readJsonBody(req);
@@ -669,6 +675,16 @@ router.post('/api/webhook/razorpay-payment', async (req, res) => {
 
   const details = extractRazorpayPaymentDetails(body);
   if (body.event && details.event !== 'manual' && body.event !== 'payment.captured') {
+    if (body.event === 'payment.failed') {
+      const entity = body.payload && body.payload.payment && body.payload.payment.entity;
+      await db.recordFailedPayment({
+        razorpayPaymentId: entity && entity.id,
+        amount: entity && typeof entity.amount === 'number' ? entity.amount / 100 : null,
+        name: entity && entity.notes && (entity.notes.name || entity.notes.customer_name),
+        email: entity && entity.email,
+        reason: entity && (entity.error_description || entity.error_reason)
+      });
+    }
     return sendJson(res, 200, { ok: true, ignored: true, event: body.event });
   }
   if (!details.amount || details.amount <= 0) {
