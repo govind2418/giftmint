@@ -373,7 +373,44 @@ router.post('/api/auth/logout', async (req, res) => {
 router.get('/api/auth/me', async (req, res) => {
   const u = await getCurrentUser(req);
   if (!u) return sendJson(res, 200, { user: null });
-  sendJson(res, 200, { user: { name: u.name, email: u.email } });
+  sendJson(res, 200, { user: { name: u.name, email: u.email, address: u.address || '', photo: u.photo || null } });
+});
+
+router.post('/api/auth/profile', async (req, res) => {
+  const u = await getCurrentUser(req);
+  if (!u) return sendJson(res, 401, { error: 'Please log in.' });
+
+  const body = await readJsonBody(req);
+  const fields = {};
+
+  if (body.name !== undefined) {
+    const name = String(body.name || '').trim();
+    if (!name) return sendJson(res, 400, { error: 'Name cannot be empty.' });
+    if (name.length > 100) return sendJson(res, 400, { error: 'Name is too long.' });
+    fields.name = name;
+  }
+  if (body.address !== undefined) {
+    const address = String(body.address || '').trim();
+    if (!address) return sendJson(res, 400, { error: 'Address cannot be empty.' });
+    if (address.length > 500) return sendJson(res, 400, { error: 'Address is too long.' });
+    fields.address = address;
+  }
+  if (body.photo !== undefined) {
+    const photo = String(body.photo || '').trim();
+    if (photo && !photo.startsWith('data:image/')) return sendJson(res, 400, { error: 'Invalid photo data.' });
+    if (photo.length > 500_000) return sendJson(res, 400, { error: 'Photo is too large.' });
+    fields.photo = photo || null;
+  }
+
+  if (Object.keys(fields).length === 0) return sendJson(res, 400, { error: 'Nothing to update.' });
+
+  await db.updateUserProfile(u.email, fields);
+  sendJson(res, 200, {
+    name: fields.name || u.name,
+    email: u.email,
+    address: fields.address !== undefined ? fields.address : (u.address || ''),
+    photo: fields.photo !== undefined ? fields.photo : (u.photo || null)
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -594,6 +631,8 @@ router.get('/api/admin/invoice/:orderId', async (req, res, params) => {
   res.end(renderInvoiceHtml(order));
 });
 
+const ADMIN_PAGE_SIZE = 20;
+
 router.get('/api/admin/orders', async (req, res) => {
   if (!(await isAdmin(req))) return sendJson(res, 401, { error: 'Admin login required.' });
   await db.refreshStatuses();
@@ -602,8 +641,14 @@ router.get('/api/admin/orders', async (req, res) => {
   const from = parsed.query.from ? Number(parsed.query.from) : null;
   const to = parsed.query.to ? Number(parsed.query.to) : null;
   const range = (from != null && to != null && !isNaN(from) && !isNaN(to)) ? { from, to } : null;
+  const search = String(parsed.query.search || '').trim();
+  const sortKey = String(parsed.query.sortKey || '');
+  const sortDir = String(parsed.query.sortDir || '');
+  const page = Math.max(1, Number(parsed.query.page) || 1);
 
-  const orders = await db.getAllOrders(range);
+  const { orders, total } = await db.getAllOrders(range, {
+    search, sortKey, sortDir, limit: ADMIN_PAGE_SIZE, offset: (page - 1) * ADMIN_PAGE_SIZE
+  });
   const orderStats = await db.getOrderStats(range);
   const stats = {
     totalOrders: orderStats.totalOrders,
@@ -612,15 +657,24 @@ router.get('/api/admin/orders', async (req, res) => {
     deliveredCount: orderStats.deliveredCount,
     // Within a date range, "customers" means distinct buyers in that
     // window, not the all-time registered count.
-    totalCustomers: range ? new Set(orders.map(o => o.customerEmail)).size : await db.countUsers()
+    totalCustomers: range ? orderStats.distinctCustomers : await db.countUsers()
   };
-  sendJson(res, 200, { orders, stats });
+  sendJson(res, 200, { orders, stats, page, pageSize: ADMIN_PAGE_SIZE, total });
 });
 
 router.get('/api/admin/users', async (req, res) => {
   if (!(await isAdmin(req))) return sendJson(res, 401, { error: 'Admin login required.' });
-  const users = await db.getAllUsersWithStats();
-  sendJson(res, 200, { users });
+  const parsed = url.parse(req.url, true);
+  const search = String(parsed.query.search || '').trim();
+  const sortKey = String(parsed.query.sortKey || '');
+  const sortDir = String(parsed.query.sortDir || '');
+  const page = Math.max(1, Number(parsed.query.page) || 1);
+
+  const { users, total } = await db.getAllUsersWithStats({
+    search, sortKey, sortDir, limit: ADMIN_PAGE_SIZE, offset: (page - 1) * ADMIN_PAGE_SIZE
+  });
+  const typeCounts = await db.getUserTypeCounts();
+  sendJson(res, 200, { users, page, pageSize: ADMIN_PAGE_SIZE, total, typeCounts });
 });
 
 router.get('/api/admin/failed-payments', async (req, res) => {
@@ -657,7 +711,7 @@ router.get('/api/admin/orders/export.csv', async (req, res) => {
   const from = parsed.query.from ? Number(parsed.query.from) : null;
   const to = parsed.query.to ? Number(parsed.query.to) : null;
   const range = (from != null && to != null && !isNaN(from) && !isNaN(to)) ? { from, to } : null;
-  const orders = await db.getAllOrders(range);
+  const { orders } = await db.getAllOrders(range); // no limit - export gets every matching row
   const header = ['Order ID', 'Customer Name', 'Customer Email', 'Date', 'Items', 'Item Count', 'Subtotal', 'GST', 'Delivery', 'Grand Total', 'Source', 'Status', 'Delivery Address'];
   const esc = v => {
     const s = String(v);

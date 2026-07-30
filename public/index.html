@@ -277,6 +277,10 @@
   <div class="invoice-box" id="buyNowBox" style="max-width:380px;"></div>
 </div>
 
+<div class="invoice-overlay" id="profileOverlay">
+  <div class="invoice-box" id="profileBox" style="max-width:420px;"></div>
+</div>
+
 <div class="invoice-overlay" id="offlineOrderOverlay">
   <div class="invoice-box" id="offlineOrderBox" style="max-width:380px;"></div>
 </div>
@@ -448,7 +452,10 @@ function toggleCart(open){
 function renderAuthArea(){
   const el = document.getElementById('authArea');
   if(currentUser){
-    el.innerHTML = `<a onclick="openOrderHistory()">My Orders</a><span>Hi, ${currentUser.name.split(' ')[0]}</span><a onclick="logout()">Logout</a>`;
+    const avatar = currentUser.photo
+      ? `<img src="${currentUser.photo}" style="width:26px;height:26px;border-radius:50%;object-fit:cover;vertical-align:middle;">`
+      : `<span style="display:inline-flex;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.25);align-items:center;justify-content:center;font-size:12px;font-weight:700;vertical-align:middle;">${currentUser.name.charAt(0).toUpperCase()}</span>`;
+    el.innerHTML = `<a onclick="openOrderHistory()">My Orders</a><span onclick="openProfile()" style="display:inline-flex;align-items:center;gap:6px;">${avatar} Hi, ${currentUser.name.split(' ')[0]}</span><a onclick="logout()">Logout</a>`;
   } else {
     el.innerHTML = `<a onclick="openAuth('login')">Login</a>`;
   }
@@ -658,6 +665,96 @@ async function confirmBuyNow(){
     const order = await api('/api/payments/create-order', { method:'POST', body: JSON.stringify({ items: [{ productId: buyNowProduct.id, qty: 1 }] }) });
     openRazorpayCheckout(order, { clearCart: false });
   } catch(e){ alert(e.message); }
+}
+
+// ---------- Profile ----------
+let profilePhotoDataUrl = null; // pending photo change, until saved
+async function openProfile(){
+  if(!currentUser) return;
+  try{
+    const me = await api('/api/auth/me');
+    currentUser = me.user;
+  } catch(e){}
+  profilePhotoDataUrl = currentUser.photo || null;
+  renderProfile();
+  document.getElementById('profileOverlay').classList.add('open');
+}
+function closeProfile(){ document.getElementById('profileOverlay').classList.remove('open'); }
+function renderProfile(){
+  const avatarHtml = profilePhotoDataUrl
+    ? `<img id="profileAvatarPreview" src="${profilePhotoDataUrl}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;">`
+    : `<div id="profileAvatarPreview" style="width:72px;height:72px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;">${currentUser.name.charAt(0).toUpperCase()}</div>`;
+  document.getElementById('profileBox').innerHTML = `
+    <div class="invoice-head"><h2>My Profile</h2><div class="sub">${currentUser.email}</div></div>
+    <div class="invoice-body">
+      <div class="auth-error" id="profileError"></div>
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:18px;">
+        <div id="profileAvatarWrap">${avatarHtml}</div>
+        <div>
+          <input type="file" accept="image/*" id="profilePhotoInput" style="display:none;" onchange="onProfilePhotoSelected(event)">
+          <button class="btn-buy" style="padding:8px 14px;font-size:12.5px;" onclick="document.getElementById('profilePhotoInput').click()">Change Photo</button>
+          ${profilePhotoDataUrl ? `<div><a onclick="removeProfilePhoto()" style="font-size:12px;color:var(--muted);cursor:pointer;text-decoration:underline;">Remove photo</a></div>` : ''}
+        </div>
+      </div>
+      <div class="form-group"><label>Name</label><input type="text" id="profileName" value="${currentUser.name}"></div>
+      <div class="form-group"><label>Delivery Address</label><textarea id="profileAddress" rows="3" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:14px;">${currentUser.address || ''}</textarea></div>
+      <p style="font-size:11.5px;color:var(--muted);">This address is used for every order you place - update it here any time you move.</p>
+    </div>
+    <div class="invoice-footer">
+      <button class="btn-close-invoice" onclick="closeProfile()">Cancel</button>
+      <button class="checkout-btn" style="flex:1;" onclick="saveProfile()">Save Changes</button>
+    </div>`;
+}
+function onProfilePhotoSelected(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  resizeImageFile(file, 200, 0.75).then(dataUrl => {
+    profilePhotoDataUrl = dataUrl;
+    renderProfile();
+  }).catch(() => alert('Could not read that image.'));
+}
+function removeProfilePhoto(){
+  profilePhotoDataUrl = '';
+  renderProfile();
+}
+function resizeImageFile(file, maxDim, quality){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if(w > h && w > maxDim){ h = Math.round(h * maxDim / w); w = maxDim; }
+        else if(h >= w && h > maxDim){ w = Math.round(w * maxDim / h); h = maxDim; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+async function saveProfile(){
+  const errEl = document.getElementById('profileError');
+  errEl.style.display = 'none';
+  const name = document.getElementById('profileName').value.trim();
+  const address = document.getElementById('profileAddress').value.trim();
+  if(!name){ errEl.textContent = 'Please enter your name.'; errEl.style.display = 'block'; return; }
+  if(!address){ errEl.textContent = 'Please enter a delivery address.'; errEl.style.display = 'block'; return; }
+  try{
+    const updated = await api('/api/auth/profile', { method:'POST', body: JSON.stringify({
+      name, address, photo: profilePhotoDataUrl == null ? undefined : profilePhotoDataUrl
+    })});
+    currentUser = updated;
+    renderAuthArea();
+    closeProfile();
+  } catch(e){
+    errEl.textContent = e.message; errEl.style.display = 'block';
+  }
 }
 function renderInvoice(){
   if(!currentOrder) return;
@@ -899,42 +996,59 @@ function adminDateFilterHtml(){
     </div>`;
 }
 
-let adminOrdersRaw = [];
-let adminOrderSearch = '';
+// ---------- Pagination (shared by Orders and Users tabs) ----------
+function paginationHtml(page, pageSize, total, pageFn){
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if(totalPages <= 1) return '';
+  const btn = (label, target, enabled) => `<button class="btn-buy" style="padding:6px 12px;font-size:12.5px;${enabled ? '' : 'opacity:.4;cursor:default;'}" ${enabled ? `onclick="${pageFn}(${target})"` : 'disabled'}>${label}</button>`;
+  return `<div style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:14px;">
+    ${btn('Prev', page - 1, page > 1)}
+    <span style="font-size:13px;color:var(--muted);">Page ${page} of ${totalPages} &middot; ${total} total</span>
+    ${btn('Next', page + 1, page < totalPages)}
+  </div>`;
+}
+let adminSearchDebounceHandle = null;
+function debounceSearch(fn, value){
+  clearTimeout(adminSearchDebounceHandle);
+  adminSearchDebounceHandle = setTimeout(() => fn(value.trim()), 350);
+}
+
+// ---------- Orders tab ----------
+let adminOrderPage = 1;
+let adminOrderSearchValue = '';
 let adminOrderSort = { key: 'date', dir: 'desc' };
-const ADMIN_ORDER_SORT_ACCESSORS = {
-  orderId: o => o.orderId,
-  customer: o => o.customerName.toLowerCase(),
-  date: o => o.createdAt,
-  amount: o => o.grandTotal,
-  status: o => o.status
-};
 function setAdminOrderSort(key){
   if(adminOrderSort.key === key) adminOrderSort.dir = adminOrderSort.dir === 'asc' ? 'desc' : 'asc';
   else adminOrderSort = { key, dir: 'asc' };
-  renderAdminOrdersTableWrap();
+  adminOrderPage = 1;
+  loadAdminOrdersTable().catch(e => alert(e.message));
 }
-function setAdminOrderSearch(value){
-  adminOrderSearch = value.toLowerCase();
-  renderAdminOrdersTableWrap();
+function setAdminOrderSearchInput(value){
+  debounceSearch(v => {
+    adminOrderSearchValue = v;
+    adminOrderPage = 1;
+    loadAdminOrdersTable().catch(e => alert(e.message));
+  }, value);
 }
-function filteredSortedOrders(){
-  let list = adminOrdersRaw;
-  if(adminOrderSearch){
-    list = list.filter(o =>
-      o.orderId.toLowerCase().includes(adminOrderSearch) ||
-      o.customerName.toLowerCase().includes(adminOrderSearch) ||
-      o.customerEmail.toLowerCase().includes(adminOrderSearch));
-  }
-  const accessor = ADMIN_ORDER_SORT_ACCESSORS[adminOrderSort.key];
-  const dir = adminOrderSort.dir === 'asc' ? 1 : -1;
-  return [...list].sort((a,b) => {
-    const av = accessor(a), bv = accessor(b);
-    return av < bv ? -dir : av > bv ? dir : 0;
-  });
+function setAdminOrderPage(page){
+  adminOrderPage = page;
+  loadAdminOrdersTable().catch(e => alert(e.message));
 }
-function renderAdminOrdersTableWrap(){
-  const orders = filteredSortedOrders();
+async function loadAdminOrdersTable(){
+  const params = new URLSearchParams();
+  if(adminDateRange){ params.set('from', adminDateRange.from); params.set('to', adminDateRange.to); }
+  if(adminOrderSearchValue) params.set('search', adminOrderSearchValue);
+  params.set('sortKey', adminOrderSort.key);
+  params.set('sortDir', adminOrderSort.dir);
+  params.set('page', adminOrderPage);
+  const { orders, stats, page, pageSize, total } = await api('/api/admin/orders?' + params.toString());
+
+  document.getElementById('adminOrdersStatsWrap').innerHTML = `
+    <div class="stat-card"><div class="stat-num">${stats.totalOrders}</div><div class="stat-label">Total Orders</div></div>
+    <div class="stat-card"><div class="stat-num">₹${stats.totalRevenue.toLocaleString('en-IN')}</div><div class="stat-label">Total Revenue</div></div>
+    <div class="stat-card"><div class="stat-num">${stats.totalCustomers}</div><div class="stat-label">Customers</div></div>
+    <div class="stat-card"><div class="stat-num">${stats.processingCount} / ${stats.deliveredCount}</div><div class="stat-label">Processing / Delivered</div></div>`;
+
   const rowsHtml = orders.length === 0
     ? `<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--muted);">No orders match.</td></tr>`
     : orders.map(o => `
@@ -952,66 +1066,60 @@ function renderAdminOrdersTableWrap(){
   document.getElementById('adminOrdersTableWrap').innerHTML = `
     <table class="invoice-table"><thead><tr>
       ${th('orderId','Order ID')}${th('customer','Customer')}${th('date','Date')}<th>Items</th>${th('amount','Amount')}<th>Source</th>${th('status','Status')}<th>Invoice</th>
-    </tr></thead><tbody>${rowsHtml}</tbody></table>`;
+    </tr></thead><tbody>${rowsHtml}</tbody></table>
+    ${paginationHtml(page, pageSize, total, 'setAdminOrderPage')}`;
 }
 async function renderAdminOrdersTab(){
-  const query = adminDateRange ? `?from=${adminDateRange.from}&to=${adminDateRange.to}` : '';
-  const { orders, stats } = await api('/api/admin/orders' + query);
-  adminOrdersRaw = orders;
-
+  adminOrderPage = 1;
   document.getElementById('adminBox').innerHTML = `
     ${adminHeaderHtml('All orders across every customer (persisted on this server)')}
     <div class="invoice-body">
       ${adminTabsHtml()}
       ${adminDateFilterHtml()}
-      <div class="admin-stats">
-        <div class="stat-card"><div class="stat-num">${stats.totalOrders}</div><div class="stat-label">Total Orders</div></div>
-        <div class="stat-card"><div class="stat-num">₹${stats.totalRevenue.toLocaleString('en-IN')}</div><div class="stat-label">Total Revenue</div></div>
-        <div class="stat-card"><div class="stat-num">${stats.totalCustomers}</div><div class="stat-label">Customers</div></div>
-        <div class="stat-card"><div class="stat-num">${stats.processingCount} / ${stats.deliveredCount}</div><div class="stat-label">Processing / Delivered</div></div>
-      </div>
-      <input type="text" id="adminOrderSearchInput" placeholder="Search by order ID, customer name or email..." oninput="setAdminOrderSearch(this.value)" style="width:100%;max-width:360px;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:12px;">
+      <div class="admin-stats" id="adminOrdersStatsWrap"></div>
+      <input type="text" id="adminOrderSearchInput" placeholder="Search by order ID, customer name or email..." oninput="setAdminOrderSearchInput(this.value)" style="width:100%;max-width:360px;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:12px;">
       <div id="adminOrdersTableWrap" style="overflow-x:auto;"></div>
     </div>
     <div class="invoice-footer">
       <button class="btn-buy" style="flex:1;" onclick="openOfflineOrderForm()">Add Offline Order</button>
       <button class="btn-print" onclick="window.location.href='/api/admin/orders/export.csv'+(adminDateRange ? '?from='+adminDateRange.from+'&to='+adminDateRange.to : '')">Export CSV</button>
     </div>`;
-  renderAdminOrdersTableWrap();
+  await loadAdminOrdersTable();
 }
-let adminUsersRaw = [];
-let adminUserSearch = '';
+// ---------- Users tab ----------
+let adminUserPage = 1;
+let adminUserSearchValue = '';
 let adminUserSort = { key: 'joined', dir: 'desc' };
-const ADMIN_USER_SORT_ACCESSORS = {
-  name: u => u.name.toLowerCase(),
-  type: u => u.auto ? 1 : 0,
-  orders: u => u.orderCount,
-  spent: u => u.totalSpent,
-  joined: u => u.createdAt
-};
 function setAdminUserSort(key){
   if(adminUserSort.key === key) adminUserSort.dir = adminUserSort.dir === 'asc' ? 'desc' : 'asc';
   else adminUserSort = { key, dir: 'asc' };
-  renderAdminUsersTableWrap();
+  adminUserPage = 1;
+  loadAdminUsersTable().catch(e => alert(e.message));
 }
-function setAdminUserSearch(value){
-  adminUserSearch = value.toLowerCase();
-  renderAdminUsersTableWrap();
+function setAdminUserSearchInput(value){
+  debounceSearch(v => {
+    adminUserSearchValue = v;
+    adminUserPage = 1;
+    loadAdminUsersTable().catch(e => alert(e.message));
+  }, value);
 }
-function filteredSortedUsers(){
-  let list = adminUsersRaw;
-  if(adminUserSearch){
-    list = list.filter(u => u.name.toLowerCase().includes(adminUserSearch) || u.email.toLowerCase().includes(adminUserSearch));
-  }
-  const accessor = ADMIN_USER_SORT_ACCESSORS[adminUserSort.key];
-  const dir = adminUserSort.dir === 'asc' ? 1 : -1;
-  return [...list].sort((a,b) => {
-    const av = accessor(a), bv = accessor(b);
-    return av < bv ? -dir : av > bv ? dir : 0;
-  });
+function setAdminUserPage(page){
+  adminUserPage = page;
+  loadAdminUsersTable().catch(e => alert(e.message));
 }
-function renderAdminUsersTableWrap(){
-  const users = filteredSortedUsers();
+async function loadAdminUsersTable(){
+  const params = new URLSearchParams();
+  if(adminUserSearchValue) params.set('search', adminUserSearchValue);
+  params.set('sortKey', adminUserSort.key);
+  params.set('sortDir', adminUserSort.dir);
+  params.set('page', adminUserPage);
+  const { users, page, pageSize, total, typeCounts } = await api('/api/admin/users?' + params.toString());
+
+  document.getElementById('adminUsersStatsWrap').innerHTML = `
+    <div class="stat-card"><div class="stat-num">${typeCounts.total}</div><div class="stat-label">Total Users</div></div>
+    <div class="stat-card"><div class="stat-num">${typeCounts.registered}</div><div class="stat-label">Registered</div></div>
+    <div class="stat-card"><div class="stat-num">${typeCounts.auto}</div><div class="stat-label">Auto (from payment)</div></div>`;
+
   const rowsHtml = users.length === 0
     ? `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);">No users match.</td></tr>`
     : users.map(u => `
@@ -1028,28 +1136,21 @@ function renderAdminUsersTableWrap(){
   document.getElementById('adminUsersTableWrap').innerHTML = `
     <table class="invoice-table"><thead><tr>
       ${th('name','User')}${th('type','Type')}${th('orders','Orders')}${th('spent','Total Spent')}${th('joined','Joined')}
-    </tr></thead><tbody>${rowsHtml}</tbody></table>`;
+    </tr></thead><tbody>${rowsHtml}</tbody></table>
+    ${paginationHtml(page, pageSize, total, 'setAdminUserPage')}`;
 }
 async function renderAdminUsersTab(){
-  const { users } = await api('/api/admin/users');
-  adminUsersRaw = users;
-  const registeredCount = users.filter(u => !u.auto).length;
-  const autoCount = users.filter(u => u.auto).length;
-
+  adminUserPage = 1;
   document.getElementById('adminBox').innerHTML = `
     ${adminHeaderHtml('Every registered account — real signups and auto-created ones from webhook payments')}
     <div class="invoice-body">
       ${adminTabsHtml()}
-      <div class="admin-stats">
-        <div class="stat-card"><div class="stat-num">${users.length}</div><div class="stat-label">Total Users</div></div>
-        <div class="stat-card"><div class="stat-num">${registeredCount}</div><div class="stat-label">Registered</div></div>
-        <div class="stat-card"><div class="stat-num">${autoCount}</div><div class="stat-label">Auto (from payment)</div></div>
-      </div>
+      <div class="admin-stats" id="adminUsersStatsWrap"></div>
       <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">"Auto (from payment)" accounts are created automatically when a Razorpay payment or bank notification names someone who isn't already registered. They get a random password nobody knows - they exist only so the order has a name attached and shows up here.</p>
-      <input type="text" id="adminUserSearchInput" placeholder="Search by name or email..." oninput="setAdminUserSearch(this.value)" style="width:100%;max-width:360px;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:12px;">
+      <input type="text" id="adminUserSearchInput" placeholder="Search by name or email..." oninput="setAdminUserSearchInput(this.value)" style="width:100%;max-width:360px;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:12px;">
       <div id="adminUsersTableWrap" style="overflow-x:auto;"></div>
     </div>`;
-  renderAdminUsersTableWrap();
+  await loadAdminUsersTable();
 }
 async function renderAdminFailedTab(){
   const { failedPayments } = await api('/api/admin/failed-payments');
