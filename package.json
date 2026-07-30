@@ -1,7 +1,7 @@
 {
-  "name": "leela-mart-backend",
+  "name": "giftmint-backend",
   "version": "1.0.0",
-  "description": "Leela Mart - college demo e-commerce backend with owner dashboard and Razorpay payments. MySQL-backed persistence.",
+  "description": "GiftMint - gift card marketplace backend (Myntra/Flipkart/Zepto/Amazon) with real code inventory, owner dashboard, and Razorpay payments. MySQL-backed persistence.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

@@ -3,68 +3,69 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Leela Mart - Online Shopping for Everyone</title>
+<title>GiftMint — Gift Cards for Myntra, Flipkart, Zepto & Amazon</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@700;800&display=swap" rel="stylesheet">
 <style>
   :root{
-    --primary:#5b0e9e;
-    --primary-dark:#3d0a6b;
-    --accent:#ff9f1a;
-    --bg:#f1f3f6;
+    --primary:#4F46E5;
+    --primary-dark:#3730A3;
+    --primary-light:#EEF2FF;
+    --mint:#10B981;
+    --mint-dark:#059669;
+    --mint-light:#ECFDF5;
+    --bg:#F5F6FB;
     --card:#ffffff;
-    --text:#212121;
-    --muted:#6b6b6b;
-    --green:#26a541;
+    --text:#0F172A;
+    --muted:#64748B;
+    --border:#E5E7EB;
+    --green:#10B981;
   }
-  *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;}
+  *{box-sizing:border-box;margin:0;padding:0;font-family:'Inter','Segoe UI',Arial,sans-serif;}
   body{background:var(--bg);color:var(--text);}
   a{text-decoration:none;color:inherit;}
+  h1,h2,.logo-word{font-family:'Poppins','Inter',sans-serif;}
 
   /* Header */
-  header{background:linear-gradient(90deg,var(--primary),var(--primary-dark));color:#fff;padding:14px 24px;position:sticky;top:0;z-index:100;box-shadow:0 2px 6px rgba(0,0,0,.2);}
+  header{background:linear-gradient(100deg,var(--primary),var(--primary-dark) 75%);color:#fff;padding:14px 24px;position:sticky;top:0;z-index:100;box-shadow:0 2px 10px rgba(55,48,163,.18);}
   .header-inner{max-width:1300px;margin:0 auto;display:flex;align-items:center;gap:24px;flex-wrap:wrap;}
-  .logo{font-size:26px;font-weight:800;font-style:italic;display:flex;flex-direction:column;line-height:1;cursor:pointer;}
-  .logo span{font-size:11px;font-weight:400;font-style:italic;color:var(--accent);}
-  .search-box{flex:1;min-width:240px;display:flex;background:#fff;border-radius:3px;overflow:hidden;}
-  .search-box input{flex:1;border:none;padding:10px 12px;font-size:14px;outline:none;color:#333;}
-  .search-box button{background:#fff;border:none;padding:0 16px;cursor:pointer;color:var(--primary);font-size:16px;}
-  .header-actions{display:flex;align-items:center;gap:22px;font-size:15px;font-weight:600;}
-  .header-actions .cart-btn{position:relative;cursor:pointer;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.12);padding:8px 14px;border-radius:4px;border:none;color:#fff;font-size:15px;font-weight:600;}
-  .cart-count{position:absolute;top:-8px;right:-8px;background:var(--accent);color:#222;font-size:11px;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-weight:800;}
-
-  /* Category strip */
-  .cat-strip{background:#fff;display:flex;gap:10px;padding:10px 24px;overflow-x:auto;border-bottom:1px solid #e0e0e0;position:sticky;top:64px;z-index:99;}
-  .cat-chip{white-space:nowrap;padding:8px 16px;border-radius:20px;border:1px solid #ddd;background:#fafafa;font-size:13px;font-weight:600;cursor:pointer;transition:.15s;color:#333;}
-  .cat-chip.active,.cat-chip:hover{background:var(--primary);color:#fff;border-color:var(--primary);}
+  .logo{display:flex;align-items:center;gap:10px;cursor:pointer;line-height:1;}
+  .logo-icon{width:36px;height:36px;flex-shrink:0;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.15);}
+  .logo-text{display:flex;flex-direction:column;}
+  .logo-word{font-size:22px;font-weight:800;letter-spacing:-.3px;}
+  .logo-word .mint{color:#6EE7B7;}
+  .logo-tag{font-size:10.5px;font-weight:500;color:#C7D2FE;letter-spacing:.3px;}
+  .header-actions{display:flex;align-items:center;gap:22px;font-size:14.5px;font-weight:600;margin-left:auto;}
+  .header-actions .cart-btn{position:relative;cursor:pointer;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.14);padding:9px 16px;border-radius:8px;border:none;color:#fff;font-size:14.5px;font-weight:600;transition:.15s;}
+  .header-actions .cart-btn:hover{background:rgba(255,255,255,.22);}
+  .cart-count{position:absolute;top:-8px;right:-8px;background:var(--mint);color:#fff;font-size:11px;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-weight:800;box-shadow:0 0 0 2px var(--primary-dark);}
 
   /* Banner */
-  .banner{max-width:1300px;margin:16px auto;padding:0 24px;}
-  .banner-inner{background:linear-gradient(120deg,var(--accent),#ffcf5c);border-radius:8px;padding:28px 32px;color:#3d0a6b;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;}
-  .banner-inner h1{font-size:26px;margin-bottom:6px;}
-  .banner-inner p{font-size:14px;font-weight:600;}
-  .banner-tag{background:#3d0a6b;color:#fff;padding:10px 18px;border-radius:6px;font-weight:700;font-size:14px;}
+  .banner{max-width:1300px;margin:20px auto;padding:0 24px;}
+  .banner-inner{background:linear-gradient(120deg,#EEF2FF 0%,#ECFDF5 100%);border:1px solid var(--border);border-radius:16px;padding:32px 36px;color:var(--text);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;}
+  .banner-inner h1{font-size:27px;margin-bottom:8px;font-weight:800;color:var(--primary-dark);letter-spacing:-.3px;}
+  .banner-inner p{font-size:14.5px;font-weight:500;color:var(--muted);}
+  .banner-tag{background:var(--mint);color:#fff;padding:11px 20px;border-radius:8px;font-weight:700;font-size:13.5px;box-shadow:0 4px 14px rgba(16,185,129,.3);white-space:nowrap;}
 
-  /* Product grid */
+  /* Platform / denomination catalog */
   .container{max-width:1300px;margin:0 auto;padding:8px 24px 60px;}
-  .section-title{font-size:19px;font-weight:700;margin:22px 0 12px;color:var(--primary-dark);}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:16px;}
-  .card{background:var(--card);border-radius:8px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;flex-direction:column;transition:.15s;border:1px solid #eee;}
-  .card:hover{box-shadow:0 6px 16px rgba(0,0,0,.12);transform:translateY(-2px);}
-  .thumb{height:150px;border-radius:6px;overflow:hidden;margin-bottom:10px;position:relative;}
-  .thumb img{width:100%;height:100%;object-fit:cover;display:block;}
-  .p-name{font-size:14px;font-weight:600;min-height:38px;line-height:1.3;}
-  .p-cat{font-size:11px;color:var(--muted);margin:4px 0;}
-  .rating{display:inline-flex;align-items:center;gap:4px;background:var(--green);color:#fff;font-size:11px;font-weight:700;padding:2px 6px;border-radius:3px;width:fit-content;margin-bottom:6px;}
-  .price-row{display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;}
-  .price{font-size:16px;font-weight:800;}
-  .mrp{font-size:12px;color:var(--muted);text-decoration:line-through;}
-  .discount{font-size:12px;color:var(--green);font-weight:700;}
-  .card-actions{margin-top:auto;padding-top:10px;display:flex;gap:8px;}
-  .card-actions button{flex:1;padding:9px 4px;border:none;border-radius:5px;font-weight:800;font-size:12px;cursor:pointer;transition:.15s;}
-  .btn-add{background:var(--accent);color:#3d0a6b;}
-  .btn-add:hover{background:#ff8c00;}
-  .btn-add.added{background:var(--green);color:#fff;}
-  .btn-buy{background:var(--primary);color:#fff;}
-  .btn-buy:hover{background:var(--primary-dark);}
+  .section-title{font-size:19px;font-weight:800;margin:26px 0 14px;color:var(--text);}
+  .platform-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px;}
+  .platform-card{background:var(--card);border-radius:14px;padding:20px;box-shadow:0 1px 2px rgba(15,23,42,.04);border:1px solid var(--border);transition:.15s;}
+  .platform-card:hover{box-shadow:0 8px 24px rgba(15,23,42,.08);border-color:#D8DEFF;}
+  .platform-head{display:flex;align-items:center;gap:12px;margin-bottom:16px;}
+  .platform-badge{width:44px;height:44px;border-radius:12px;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;flex-shrink:0;}
+  .platform-title{font-size:16px;font-weight:700;}
+  .platform-sub{font-size:11.5px;color:var(--muted);}
+  .denom-row{display:flex;flex-wrap:wrap;gap:8px;}
+  .denom-chip{padding:10px 4px;border-radius:8px;border:1.5px solid var(--border);background:#fff;color:var(--text);font-weight:700;font-size:13px;cursor:pointer;min-width:64px;text-align:center;transition:.15s;}
+  .denom-chip:hover{border-color:var(--mint);background:var(--mint-light);color:var(--mint-dark);}
+  .denom-chip.out{border-color:var(--border);color:#B4BBC7;cursor:default;background:#FAFAFB;}
+  .denom-chip.out:hover{border-color:var(--border);background:#FAFAFB;color:#B4BBC7;}
+  .denom-chip.out small{display:block;font-size:9px;font-weight:700;margin-top:2px;}
+  .denom-chip.added{background:var(--mint);border-color:var(--mint);color:#fff;}
 
   /* Cart drawer */
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;z-index:200;}
@@ -76,8 +77,7 @@
   .drawer-header button{background:none;border:none;color:#fff;font-size:20px;cursor:pointer;}
   .drawer-body{flex:1;overflow-y:auto;padding:12px 16px;}
   .cart-item{display:flex;gap:10px;align-items:center;border-bottom:1px solid #eee;padding:10px 0;}
-  .cart-item .thumb-sm{width:52px;height:52px;border-radius:6px;overflow:hidden;flex-shrink:0;}
-  .cart-item .thumb-sm img{width:100%;height:100%;object-fit:cover;display:block;}
+  .cart-item .thumb-sm{width:48px;height:48px;border-radius:8px;flex-shrink:0;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;}
   .cart-item-info{flex:1;font-size:13px;}
   .cart-item-info .nm{font-weight:600;margin-bottom:2px;}
   .qty-controls{display:flex;align-items:center;gap:8px;margin-top:4px;}
@@ -88,12 +88,11 @@
   .total-row{display:flex;justify-content:space-between;font-size:15px;font-weight:700;margin-bottom:12px;}
   .checkout-btn{width:100%;padding:12px;background:var(--green);color:#fff;border:none;border-radius:6px;font-weight:800;font-size:14px;cursor:pointer;}
 
-  footer{background:#22004a;color:#cbb8e6;padding:30px 24px 16px;margin-top:30px;font-size:13px;}
+  footer{background:#111827;color:#9CA3AF;padding:30px 24px 16px;margin-top:30px;font-size:13px;}
   .footer-inner{max-width:1300px;margin:0 auto;display:flex;gap:40px;flex-wrap:wrap;justify-content:space-between;}
   footer h4{color:#fff;font-size:14px;margin-bottom:10px;}
   footer p{line-height:1.9;cursor:default;}
-  .disclaimer{text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid rgba(255,255,255,.15);font-size:12px;color:#a892cf;line-height:1.7;}
-  .no-results{text-align:center;padding:40px;color:var(--muted);font-size:14px;grid-column:1/-1;}
+  .disclaimer{text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid rgba(255,255,255,.1);font-size:12px;color:#6B7280;line-height:1.7;}
 
   /* Invoice / modal boxes */
   .invoice-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:300;display:none;align-items:center;justify-content:center;padding:20px;}
@@ -111,14 +110,17 @@
   table.invoice-table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:4px;}
   table.invoice-table th{text-align:left;border-bottom:1px solid #ddd;padding:6px 4px;color:var(--muted);font-size:11px;text-transform:uppercase;}
   table.invoice-table td{padding:6px 4px;border-bottom:1px solid #f2f2f2;}
+  .code-cell{display:flex;align-items:center;gap:8px;}
+  .code-text{font-family:'Courier New',monospace;font-weight:700;letter-spacing:.4px;background:var(--primary-light);padding:3px 7px;border-radius:4px;}
+  .copy-btn{border:1px solid var(--primary);background:#fff;color:var(--primary);border-radius:4px;font-size:11px;font-weight:700;padding:3px 8px;cursor:pointer;}
+  .copy-btn.copied{background:var(--mint);border-color:var(--mint);color:#fff;}
   .invoice-totals div{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;}
   .invoice-totals .grand{font-size:16px;font-weight:800;border-top:2px solid #eee;margin-top:6px;padding-top:8px;color:var(--primary-dark);}
   .invoice-footer{padding:16px 24px 24px;display:flex;gap:10px;}
   .invoice-footer button{flex:1;padding:11px;border:none;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer;}
   .btn-close-invoice{background:#eee;color:#333;}
-  .btn-print{background:var(--accent);color:#3d0a6b;}
-  .status-processing{background:#fff3e0;color:#e65100;}
-  .status-processing .dot{background:#e65100;}
+  .btn-print{background:var(--mint);color:#fff;}
+  .btn-buy{background:var(--primary);color:#fff;padding:9px 4px;border:none;border-radius:5px;font-weight:800;font-size:12px;cursor:pointer;}
 
   /* Printing the invoice should only print the invoice, not the whole
      storefront page sitting behind the modal. */
@@ -129,23 +131,13 @@
     .invoice-footer{display:none!important;}
   }
 
-  /* Order tracker widget */
-  .order-tracker{position:fixed;bottom:18px;right:18px;background:#fff;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.22);padding:12px 16px;display:none;align-items:center;gap:10px;cursor:pointer;z-index:250;border:1px solid #eee;}
-  .order-tracker.show{display:flex;}
-  .order-tracker .badge{width:11px;height:11px;border-radius:50%;flex-shrink:0;}
-  .order-tracker .badge.processing{background:#e65100;animation:pulse 1.2s infinite;}
-  .order-tracker .badge.delivered{background:var(--green);}
-  @keyframes pulse{0%{opacity:1;}50%{opacity:.35;}100%{opacity:1;}}
-  .order-tracker .info{font-size:13px;font-weight:700;color:var(--text);}
-  .order-tracker .info small{display:block;font-weight:500;color:var(--muted);font-size:11px;margin-top:1px;}
-
   /* Auth */
   #authArea{display:flex;align-items:center;gap:14px;}
   #authArea a,#authArea span{cursor:pointer;}
   .form-group{margin-bottom:12px;}
   .form-group label{display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:var(--muted);}
-  .form-group input{width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px;outline:none;}
-  .form-group input:focus{border-color:var(--primary);}
+  .form-group input,.form-group select{width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px;outline:none;}
+  .form-group input:focus,.form-group select:focus{border-color:var(--primary);}
   .auth-error{color:#c0392b;font-size:12.5px;margin-bottom:10px;display:none;background:#fdecea;padding:8px 10px;border-radius:5px;}
   .auth-switch{text-align:center;font-size:12.5px;margin-top:14px;color:var(--muted);}
   .auth-switch a{color:var(--primary);font-weight:700;cursor:pointer;}
@@ -158,7 +150,6 @@
   .history-right{text-align:right;}
   .history-amt{font-weight:700;font-size:13.5px;}
   .history-status{font-size:11px;font-weight:700;margin-top:3px;padding:2px 8px;border-radius:10px;display:inline-block;}
-  .history-status.processing{background:#fff3e0;color:#e65100;}
   .history-status.delivered{background:#e8f5e9;color:var(--green);}
 
   /* Admin dashboard */
@@ -166,7 +157,17 @@
   .stat-card{background:#faf8fc;border:1px solid #eee;border-radius:8px;padding:12px 14px;}
   .stat-num{font-size:20px;font-weight:800;color:var(--primary-dark);}
   .stat-label{font-size:11px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.4px;}
-.loading-note{padding:60px;text-align:center;color:var(--muted);grid-column:1/-1;}
+  .loading-note{padding:60px;text-align:center;color:var(--muted);grid-column:1/-1;}
+  .stock-matrix{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:18px;}
+  .stock-matrix th,.stock-matrix td{border:1px solid #eee;padding:8px;text-align:center;}
+  .stock-matrix th{background:#faf8fc;color:var(--muted);font-size:11px;text-transform:uppercase;}
+  .stock-matrix td.zero{color:#c0392b;font-weight:700;}
+  .stock-matrix td.ok{color:var(--green);font-weight:700;}
+  .badge-pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:10px;display:inline-block;}
+  .badge-real{background:#e3f2fd;color:#1565c0;}
+  .badge-synthetic{background:#fff3e0;color:#e65100;}
+  .badge-available{background:#e8f5e9;color:var(--green);}
+  .badge-redeemed{background:#f3e5f5;color:#6a1b9a;}
 </style>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
@@ -174,10 +175,21 @@
 
 <header>
   <div class="header-inner">
-    <div class="logo" onclick="resetView()">Leela Mart<span>Shop Smart, Shop Local</span></div>
-    <div class="search-box">
-      <input id="searchInput" type="text" placeholder="Search for products, brands and more" oninput="renderProducts()">
-      <button onclick="renderProducts()">🔍</button>
+    <div class="logo" onclick="resetView()">
+      <svg class="logo-icon" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="gmGradHeader" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#818CF8"/><stop offset="100%" stop-color="#34D399"/>
+        </linearGradient></defs>
+        <rect width="40" height="40" rx="11" fill="url(#gmGradHeader)"/>
+        <rect x="9" y="15" width="22" height="5" rx="2" fill="#fff"/>
+        <rect x="11" y="19" width="18" height="12" rx="2" fill="#fff"/>
+        <rect x="18.5" y="10" width="3" height="21" fill="url(#gmGradHeader)"/>
+        <circle cx="30" cy="9" r="2.6" fill="#fff"/>
+      </svg>
+      <div class="logo-text">
+        <span class="logo-word">Gift<span class="mint">Mint</span></span>
+        <span class="logo-tag">Gift Cards, Instantly</span>
+      </div>
     </div>
     <div class="header-actions">
       <div id="authArea"></div>
@@ -186,55 +198,52 @@
   </div>
 </header>
 
-<div class="cat-strip" id="catStrip"></div>
-
 <div class="banner">
   <div class="banner-inner">
     <div>
-      <h1>Big Shopping Days — All Your Favourite Brands</h1>
-      <p>Mobiles, laptops, fashion, appliances, grocery & more — all in one place.</p>
+      <h1>Gift Cards for Myntra, Flipkart, Zepto & Amazon</h1>
+      <p>Pick a platform, pick a value, pay securely — the code lands on your invoice instantly.</p>
     </div>
-    <div class="banner-tag">Up to 40% OFF</div>
+    <div class="banner-tag">Instant Digital Delivery</div>
   </div>
 </div>
 
 <div class="container">
-  <div class="section-title" id="sectionTitle">All Products</div>
-  <div class="grid" id="productGrid"></div>
+  <div class="section-title">Choose a Gift Card</div>
+  <div class="platform-grid" id="platformGrid"><div class="loading-note">Loading catalog…</div></div>
 </div>
 
 <footer>
   <div class="footer-inner">
     <div>
       <h4>About</h4>
-      <p>About Leela Mart</p>
+      <p>About GiftMint</p>
       <p>Careers</p>
       <p>Press</p>
     </div>
     <div>
       <h4>Help</h4>
       <p>Payments</p>
-      <p>Shipping</p>
-      <p>Returns</p>
+      <p>How Delivery Works</p>
       <p>FAQ</p>
     </div>
     <div>
       <h4>Policy</h4>
-      <p>Return Policy</p>
+      <p>Refund Policy</p>
       <p>Terms of Use</p>
       <p>Privacy Policy</p>
     </div>
     <div>
       <h4>Contact</h4>
-      <p>Leela Mart HQ, India</p>
-      <p>support@leelamart.demo</p>
+      <p>GiftMint HQ, India</p>
+      <p>support@giftmint.app</p>
     </div>
     <div id="ownerLoginBlock">
       <h4>Owner</h4>
       <p><a onclick="openAdminLogin()" style="text-decoration:underline;cursor:pointer;">Owner / Admin Login</a></p>
     </div>
   </div>
-  <div class="disclaimer">This is a mock e-commerce website ("Leela Mart") built solely for a college presentation / academic demo. No real transactions occur. Brand names, product images and prices are used only for illustrative/educational purposes as part of a student project and do not imply any affiliation with, or endorsement by, the respective trademark owners. Product photos are sourced from public placeholder image services for demo purposes only.</div>
+  <div class="disclaimer">This is a mock gift-card storefront ("GiftMint") built solely for a college presentation / academic demo. No real transactions occur. Brand names are used only for illustrative/educational purposes as part of a student project and do not imply any affiliation with, or endorsement by, the respective trademark owners. Gift codes shown here are either genuine test inventory entered by the demo owner, or clearly-marked synthetic codes invented for unattributed payments — never real, redeemable gift card codes.</div>
 </footer>
 
 <div class="overlay" id="overlay" onclick="toggleCart(false)"></div>
@@ -245,9 +254,6 @@
   </div>
   <div class="drawer-body" id="cartBody"></div>
   <div class="drawer-footer" id="cartFooter" style="display:none;">
-    <div class="total-row"><span>Subtotal</span><span id="cartSubtotal">₹0</span></div>
-    <div class="total-row" style="font-weight:400;font-size:13px;color:var(--muted);"><span>GST (18%)</span><span id="cartTax">₹0</span></div>
-    <div class="total-row" style="font-weight:400;font-size:13px;color:var(--muted);"><span>Delivery Charge</span><span id="cartDelivery">₹0</span></div>
     <div class="total-row"><span>Total</span><span id="cartTotal">₹0</span></div>
     <button class="checkout-btn" onclick="placeOrder()">Place Order</button>
   </div>
@@ -270,11 +276,7 @@
 </div>
 
 <div class="invoice-overlay" id="adminOverlay">
-  <div class="invoice-box" id="adminBox" style="max-width:820px;"></div>
-</div>
-
-<div class="invoice-overlay" id="buyNowOverlay">
-  <div class="invoice-box" id="buyNowBox" style="max-width:380px;"></div>
+  <div class="invoice-box" id="adminBox" style="max-width:900px;"></div>
 </div>
 
 <div class="invoice-overlay" id="profileOverlay">
@@ -285,14 +287,9 @@
   <div class="invoice-box" id="offlineOrderBox" style="max-width:380px;"></div>
 </div>
 
-<div class="order-tracker" id="orderTracker" onclick="openInvoice()">
-  <span class="badge processing" id="trackerBadge"></span>
-  <div class="info">
-    <span id="trackerText">Processing</span>
-    <small id="trackerSub"></small>
-  </div>
+<div class="invoice-overlay" id="addCodeOverlay">
+  <div class="invoice-box" id="addCodeBox" style="max-width:420px;"></div>
 </div>
-
 
 <script>
 // ---------- API helper ----------
@@ -309,139 +306,111 @@ async function api(path, opts){
 }
 
 // ---------- State ----------
-let products = [];
-let activeCat = "All";
-let cart = {};              // productId -> qty (client-side only, doesn't need to survive reload)
-let currentUser = null;     // { name, email } from /api/auth/me
-let currentOrder = null;    // order object currently shown in invoice modal
-let pendingAction = null;   // function to run once login succeeds
+let catalog = [];           // [{id,name,denominations:[{value,inStock}]}]
+let cart = {};               // "platformId:denomination" -> qty (client-side only)
+let currentUser = null;      // { name, email } from /api/auth/me
+let currentOrder = null;     // order object currently shown in invoice modal
+let pendingAction = null;    // function to run once login succeeds
 let authMode = "login";
 let isAdminLoggedIn = false;
 
-function pad(n){ return n.toString().padStart(2,'0'); }
+function platformById(id){ return catalog.find(p => p.id === id); }
+function cartKey(platform, denom){ return platform + ':' + denom; }
 
-function productImg(p, w, h){
-  w = w || 320; h = h || 220;
-  const fallback = `https://placehold.co/${w}x${h}/${p.color}/555555?text=${encodeURIComponent(p.name.split(' ').slice(0,3).join(' '))}`;
-  return { src: `https://loremflickr.com/${w}/${h}/${encodeURIComponent(p.kw)}?lock=${p.id}`, fallback };
-}
+// Brand-adjacent accent colors purely for visual distinction between
+// platform cards - not the real brand marks (see footer disclaimer).
+const PLATFORM_COLORS = {
+  myntra: '#FF3F6C', flipkart: '#2874F0', zepto: '#8025FB', amazon: '#FF9900'
+};
+function platformColor(id){ return PLATFORM_COLORS[id] || 'var(--primary)'; }
 
-function discountPct(p){ return Math.round((1 - p.price/p.mrp)*100); }
+// ---------- Catalog ----------
+function resetView(){ toggleCart(false); }
 
-// ---------- Categories / product grid ----------
-function renderCategories(){
-  const cats = ["All", ...new Set(products.map(p=>p.cat))];
-  document.getElementById('catStrip').innerHTML = cats.map(c =>
-    `<div class="cat-chip ${c===activeCat?'active':''}" onclick="selectCat('${c}')">${c}</div>`
-  ).join('');
-}
-
-function selectCat(c){ activeCat = c; renderCategories(); renderProducts(); }
-
-function resetView(){
-  activeCat = "All";
-  document.getElementById('searchInput').value = "";
-  renderCategories();
-  renderProducts();
-}
-
-function renderProducts(){
-  const q = document.getElementById('searchInput').value.trim().toLowerCase();
-  let list = products.filter(p => (activeCat==="All" || p.cat===activeCat) && (q==="" || p.name.toLowerCase().includes(q) || p.cat.toLowerCase().includes(q)));
-  document.getElementById('sectionTitle').textContent = activeCat==="All" ? "All Products" : activeCat;
-  const grid = document.getElementById('productGrid');
-  if(products.length === 0){
-    grid.innerHTML = `<div class="loading-note">Loading products…</div>`;
+function renderCatalog(){
+  const grid = document.getElementById('platformGrid');
+  if(catalog.length === 0){
+    grid.innerHTML = `<div class="loading-note">Loading catalog…</div>`;
     return;
   }
-  if(list.length===0){
-    grid.innerHTML = `<div class="no-results">No products found.</div>`;
-    return;
-  }
-  grid.innerHTML = list.map(p => {
-    const img = productImg(p);
-    return `
-    <div class="card">
-      <div class="thumb"><img src="${img.src}" alt="${p.name}" loading="lazy" onerror="this.onerror=null;this.src='${img.fallback}';"></div>
-      <div class="p-name">${p.name}</div>
-      <div class="p-cat">${p.cat}</div>
-      <div class="rating">${p.rating} ★</div>
-      <div class="price-row">
-        <span class="price">₹${p.price.toLocaleString('en-IN')}</span>
-        <span class="mrp">₹${p.mrp.toLocaleString('en-IN')}</span>
-        <span class="discount">${discountPct(p)}% off</span>
+  grid.innerHTML = catalog.map(p => `
+    <div class="platform-card">
+      <div class="platform-head">
+        <div class="platform-badge" style="background:${platformColor(p.id)};">${p.name.charAt(0)}</div>
+        <div><div class="platform-title">${p.name}</div><div class="platform-sub">Gift Card</div></div>
       </div>
-      <div class="card-actions">
-        <button id="btn-${p.id}" class="btn-add" onclick="addToCart(${p.id})">Add to Cart</button>
-        <button class="btn-buy" onclick="buyNow(${p.id})">Buy Now</button>
+      <div class="denom-row">
+        ${p.denominations.map(d => `
+          <button class="denom-chip ${d.inStock>0?'':'out'}" id="chip-${p.id}-${d.value}"
+            ${d.inStock>0 ? `onclick="addToCart('${p.id}',${d.value})"` : 'disabled'}>
+            ₹${d.value}${d.inStock>0?'':'<small>Out of Stock</small>'}
+          </button>`).join('')}
       </div>
-    </div>`;
-  }).join('');
+    </div>`).join('');
 }
 
 // ---------- Cart ----------
 function saveCart(){
-  try{ localStorage.setItem('leelaMartCart', JSON.stringify(cart)); } catch(e){}
+  try{ localStorage.setItem('giftMintCart', JSON.stringify(cart)); } catch(e){}
 }
 function loadCart(){
   try{
-    const raw = localStorage.getItem('leelaMartCart');
+    const raw = localStorage.getItem('giftMintCart');
     if(raw) cart = JSON.parse(raw) || {};
   } catch(e){ cart = {}; }
 }
-function addToCart(id){
-  cart[id] = (cart[id]||0) + 1;
+function addToCart(platform, denom){
+  const key = cartKey(platform, denom);
+  cart[key] = (cart[key]||0) + 1;
   updateCartCount();
   saveCart();
-  const btn = document.getElementById('btn-'+id);
-  if(btn){ const old = btn.textContent; btn.textContent = "Added ✓"; btn.classList.add('added'); setTimeout(()=>{btn.textContent=old; btn.classList.remove('added');},900); }
+  const chip = document.getElementById('chip-'+platform+'-'+denom);
+  if(chip){ chip.classList.add('added'); setTimeout(()=>chip.classList.remove('added'), 500); }
   renderCart();
 }
-function changeQty(id, delta){
-  cart[id] = (cart[id]||0) + delta;
-  if(cart[id] <= 0) delete cart[id];
+function changeQty(key, delta){
+  cart[key] = (cart[key]||0) + delta;
+  if(cart[key] <= 0) delete cart[key];
   updateCartCount();
   saveCart();
   renderCart();
 }
-function removeItem(id){ delete cart[id]; updateCartCount(); saveCart(); renderCart(); }
+function removeItem(key){ delete cart[key]; updateCartCount(); saveCart(); renderCart(); }
 function updateCartCount(){
   document.getElementById('cartCount').textContent = Object.values(cart).reduce((a,b)=>a+b,0);
 }
 function renderCart(){
   const body = document.getElementById('cartBody');
   const footer = document.getElementById('cartFooter');
-  const ids = Object.keys(cart);
-  if(ids.length===0){
-    body.innerHTML = `<div class="empty-cart">Your cart is empty.<br>Add some products to get started!</div>`;
+  const keys = Object.keys(cart);
+  if(keys.length===0){
+    body.innerHTML = `<div class="empty-cart">Your cart is empty.<br>Pick a gift card to get started!</div>`;
     footer.style.display = "none";
     return;
   }
-  const cartItems = [];
-  body.innerHTML = ids.map(id => {
-    const p = products.find(x=>x.id==id);
-    const img = productImg(p, 100, 100);
-    const qty = cart[id];
-    cartItems.push({ price: p.price, qty });
+  let total = 0;
+  body.innerHTML = keys.map(key => {
+    const [platform, denomStr] = key.split(':');
+    const denom = Number(denomStr);
+    const p = platformById(platform);
+    const qty = cart[key];
+    const lineTotal = denom * qty;
+    total += lineTotal;
     return `
       <div class="cart-item">
-        <div class="thumb-sm"><img src="${img.src}" alt="${p.name}" onerror="this.onerror=null;this.src='${img.fallback}';"></div>
+        <div class="thumb-sm" style="background:${platformColor(platform)};">${p ? p.name.charAt(0) : '?'}</div>
         <div class="cart-item-info">
-          <div class="nm">${p.name}</div>
-          <div>₹${p.price.toLocaleString('en-IN')} x ${qty} = ₹${(p.price*qty).toLocaleString('en-IN')}</div>
+          <div class="nm">${p ? p.name : platform} Gift Card &middot; ₹${denom}</div>
+          <div>₹${denom.toLocaleString('en-IN')} x ${qty} = ₹${lineTotal.toLocaleString('en-IN')}</div>
           <div class="qty-controls">
-            <button onclick="changeQty(${p.id},-1)">−</button><span>${qty}</span><button onclick="changeQty(${p.id},1)">+</button>
+            <button onclick="changeQty('${key}',-1)">−</button><span>${qty}</span><button onclick="changeQty('${key}',1)">+</button>
           </div>
-          <span class="remove-link" onclick="removeItem(${p.id})">Remove</span>
+          <span class="remove-link" onclick="removeItem('${key}')">Remove</span>
         </div>
       </div>`;
   }).join('');
   footer.style.display = "block";
-  const t = computeTotals(cartItems);
-  document.getElementById('cartSubtotal').textContent = "₹" + t.subtotal.toLocaleString('en-IN');
-  document.getElementById('cartTax').textContent = "₹" + t.tax.toLocaleString('en-IN');
-  document.getElementById('cartDelivery').textContent = "₹" + t.delivery;
-  document.getElementById('cartTotal').textContent = "₹" + t.grandTotal.toLocaleString('en-IN');
+  document.getElementById('cartTotal').textContent = "₹" + total.toLocaleString('en-IN');
 }
 function toggleCart(open){
   document.getElementById('drawer').classList.toggle('open', open);
@@ -488,8 +457,8 @@ function renderAuthForm(){
   const mode = authMode;
   const titles = { login: "Login", signup: "Create Account", forgot: "Reset Password" };
   const subs = {
-    login: pendingAction ? "Please sign in to continue your order" : "Leela Mart Account",
-    signup: pendingAction ? "Create an account to continue your order" : "Leela Mart Account",
+    login: pendingAction ? "Please sign in to continue your order" : "GiftMint Account",
+    signup: pendingAction ? "Create an account to continue your order" : "GiftMint Account",
     forgot: "Enter your Gmail account to reset your password"
   };
   let fieldsHtml = "";
@@ -562,42 +531,33 @@ async function logout(){
   try{ await api('/api/auth/logout', { method:'POST' }); } catch(e){}
   currentUser = null;
   currentOrder = null;
-  document.getElementById('orderTracker').classList.remove('show');
   renderAuthArea();
 }
 
-// ---------- Orders / Razorpay Checkout ----------
-// Same GST + delivery formula the server uses (server always recomputes the
-// authoritative amount - this is only for showing the customer the real
-// total before they pay, not for charging).
-function computeTotals(items){
-  const subtotal = items.reduce((s,i) => s + i.price * i.qty, 0);
-  const tax = Math.round(subtotal * 0.18);
-  const delivery = subtotal > 0 ? 100 : 0;
-  return { subtotal, tax, delivery, grandTotal: subtotal + tax + delivery };
-}
-
+// ---------- Checkout / Razorpay ----------
 function placeOrder(){
-  const ids = Object.keys(cart);
-  if(ids.length===0) return;
+  const keys = Object.keys(cart);
+  if(keys.length===0) return;
   requireLogin(async () => {
-    const items = ids.map(id => ({ productId: Number(id), qty: cart[id] }));
+    const items = keys.map(key => {
+      const [platform, denom] = key.split(':');
+      return { platform, denomination: Number(denom), qty: cart[key] };
+    });
     try{
       const order = await api('/api/payments/create-order', { method:'POST', body: JSON.stringify({ items }) });
-      openRazorpayCheckout(order, { clearCart: true });
+      openRazorpayCheckout(order);
     } catch(e){ alert(e.message); }
   });
 }
 
-function openRazorpayCheckout(order, opts){
-  opts = opts || {};
+function openRazorpayCheckout(order){
   const rzp = new Razorpay({
     key: order.key_id,
     amount: order.amount,
     currency: order.currency,
     order_id: order.order_id,
-    name: "Leela Mart",
-    description: "Order payment",
+    name: "GiftMint",
+    description: "Gift card purchase",
     prefill: { name: order.name, email: order.email },
     theme: { color: "#6a1b9a" },
     modal: {
@@ -613,10 +573,9 @@ function openRazorpayCheckout(order, opts){
         currentOrder = verified;
         renderInvoice();
         document.getElementById('invoiceOverlay').classList.add('open');
-        updateTracker(verified);
-        if(opts.clearCart){ cart = {}; updateCartCount(); saveCart(); renderCart(); }
+        cart = {}; updateCartCount(); saveCart(); renderCart();
         toggleCart(false);
-        closeBuyNowPreview();
+        loadCatalog();
       } catch(e){
         alert("Payment succeeded but order verification failed: " + e.message);
       }
@@ -626,45 +585,6 @@ function openRazorpayCheckout(order, opts){
     alert("Payment failed: " + ((response.error && response.error.description) || "Please try again."));
   });
   rzp.open();
-}
-
-let buyNowProduct = null;
-function buyNow(id){
-  requireLogin(() => {
-    buyNowProduct = products.find(p => p.id === id);
-    if(!buyNowProduct) return;
-    renderBuyNowPreview();
-    document.getElementById('buyNowOverlay').classList.add('open');
-  });
-}
-function closeBuyNowPreview(){
-  document.getElementById('buyNowOverlay').classList.remove('open');
-  buyNowProduct = null;
-}
-function renderBuyNowPreview(){
-  const p = buyNowProduct;
-  const t = computeTotals([{ price: p.price, qty: 1 }]);
-  document.getElementById('buyNowBox').innerHTML = `
-    <div class="invoice-head"><h2>Confirm Purchase</h2><div class="sub">${p.name}</div></div>
-    <div class="invoice-body">
-      <div class="invoice-totals">
-        <div><span>Item price</span><span>₹${t.subtotal.toLocaleString('en-IN')}</span></div>
-        <div><span>GST (18%)</span><span>₹${t.tax.toLocaleString('en-IN')}</span></div>
-        <div><span>Delivery Charge</span><span>₹${t.delivery}</span></div>
-        <div class="grand"><span>You Pay</span><span>₹${t.grandTotal.toLocaleString('en-IN')}</span></div>
-      </div>
-    </div>
-    <div class="invoice-footer">
-      <button class="btn-close-invoice" onclick="closeBuyNowPreview()">Cancel</button>
-      <button class="checkout-btn" style="flex:1;" onclick="confirmBuyNow()">Proceed to Pay</button>
-    </div>`;
-}
-async function confirmBuyNow(){
-  if(!buyNowProduct) return;
-  try{
-    const order = await api('/api/payments/create-order', { method:'POST', body: JSON.stringify({ items: [{ productId: buyNowProduct.id, qty: 1 }] }) });
-    openRazorpayCheckout(order, { clearCart: false });
-  } catch(e){ alert(e.message); }
 }
 
 // ---------- Profile ----------
@@ -697,8 +617,6 @@ function renderProfile(){
         </div>
       </div>
       <div class="form-group"><label>Name</label><input type="text" id="profileName" value="${currentUser.name}"></div>
-      <div class="form-group"><label>Delivery Address</label><textarea id="profileAddress" rows="3" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-family:inherit;font-size:14px;">${currentUser.address || ''}</textarea></div>
-      <p style="font-size:11.5px;color:var(--muted);">This address is used for every order you place - update it here any time you move.</p>
     </div>
     <div class="invoice-footer">
       <button class="btn-close-invoice" onclick="closeProfile()">Cancel</button>
@@ -742,12 +660,10 @@ async function saveProfile(){
   const errEl = document.getElementById('profileError');
   errEl.style.display = 'none';
   const name = document.getElementById('profileName').value.trim();
-  const address = document.getElementById('profileAddress').value.trim();
   if(!name){ errEl.textContent = 'Please enter your name.'; errEl.style.display = 'block'; return; }
-  if(!address){ errEl.textContent = 'Please enter a delivery address.'; errEl.style.display = 'block'; return; }
   try{
     const updated = await api('/api/auth/profile', { method:'POST', body: JSON.stringify({
-      name, address, photo: profilePhotoDataUrl == null ? undefined : profilePhotoDataUrl
+      name, photo: profilePhotoDataUrl == null ? undefined : profilePhotoDataUrl
     })});
     currentUser = updated;
     renderAuthArea();
@@ -756,29 +672,38 @@ async function saveProfile(){
     errEl.textContent = e.message; errEl.style.display = 'block';
   }
 }
+
+// ---------- Invoice (codes reveal) ----------
+function escHtml(v){ return String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escJs(v){ return String(v).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+function copyCode(btn, code){
+  navigator.clipboard.writeText(code).then(() => {
+    const old = btn.textContent;
+    btn.textContent = 'Copied!'; btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = old; btn.classList.remove('copied'); }, 1200);
+  }).catch(() => alert(code));
+}
 function renderInvoice(){
   if(!currentOrder) return;
   const o = currentOrder;
-  const rowsHtml = o.items.map(i => `<tr><td>${i.name}</td><td>${i.qty}</td><td>₹${i.price.toLocaleString('en-IN')}</td><td>₹${(i.price*i.qty).toLocaleString('en-IN')}</td></tr>`).join('');
-  const statusHtml = o.status === "Delivered"
-    ? `<div class="invoice-status"><span class="dot"></span> Delivered</div>`
-    : `<div class="invoice-status status-processing"><span class="dot"></span> Processing &mdash; arriving in <span id="countdownText">05:00</span></div>`;
+  const rowsHtml = o.items.map((i, idx) => `
+    <tr>
+      <td>${escHtml(i.platformName)} Gift Card</td>
+      <td>₹${i.denomination.toLocaleString('en-IN')}</td>
+      <td><div class="code-cell"><span class="code-text">${escHtml(i.code)}</span><button class="copy-btn" onclick="copyCode(this,'${escJs(i.code)}')">Copy</button></div></td>
+    </tr>`).join('');
   document.getElementById('invoiceBox').innerHTML = `
     <div class="invoice-head">
-      <h2>Leela Mart</h2>
-      <div class="sub">Tax Invoice &middot; Order ID: ${o.orderId}</div>
+      <h2>GiftMint</h2>
+      <div class="sub">Gift Card Invoice &middot; Order ID: ${o.orderId}</div>
       <div class="sub">${o.orderDate}${currentUser ? ' &middot; ' + currentUser.name + ' (' + currentUser.email + ')' : ''}</div>
     </div>
     <div class="invoice-body">
-      ${statusHtml}
-      <div class="invoice-section"><h4>Delivery Address</h4><p>${o.address}<br>India</p></div>
-      <div class="invoice-section"><h4>Order Summary</h4>
-        <table class="invoice-table"><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+      <div class="invoice-status"><span class="dot"></span> Delivered — code(s) below</div>
+      <div class="invoice-section"><h4>Your Gift Card(s)</h4>
+        <table class="invoice-table"><thead><tr><th>Gift Card</th><th>Value</th><th>Code</th></tr></thead><tbody>${rowsHtml}</tbody></table>
       </div>
       <div class="invoice-totals">
-        <div><span>Subtotal</span><span>₹${o.subtotal.toLocaleString('en-IN')}</span></div>
-        <div><span>GST (18%)</span><span>₹${o.tax.toLocaleString('en-IN')}</span></div>
-        <div><span>Delivery Charge</span><span>₹${o.delivery}</span></div>
         <div class="grand"><span>Grand Total</span><span>₹${o.grandTotal.toLocaleString('en-IN')}</span></div>
       </div>
     </div>
@@ -786,43 +711,6 @@ function renderInvoice(){
       <button class="btn-close-invoice" onclick="closeInvoice()">Close</button>
       <button class="btn-print" onclick="window.print()">Print Invoice</button>
     </div>`;
-}
-function tickOrders(){
-  if(!currentUser || !currentOrder) return;
-  if(currentOrder.status === "Processing"){
-    const remaining = currentOrder.deliverAt - Date.now();
-    if(remaining <= 0){
-      // Time's up - re-fetch to get the authoritative status from the server.
-      api('/api/orders/' + currentOrder.orderId).then(o => {
-        currentOrder = o;
-        if(document.getElementById('invoiceOverlay').classList.contains('open')) renderInvoice();
-        updateTracker(o);
-      }).catch(()=>{});
-      return;
-    }
-    const mins = Math.max(0, Math.floor(remaining/60000));
-    const secs = Math.max(0, Math.floor((remaining%60000)/1000));
-    const el = document.getElementById('countdownText');
-    if(el) el.textContent = `${pad(mins)}:${pad(secs)}`;
-    updateTracker(currentOrder);
-  }
-}
-function updateTracker(order){
-  const tracker = document.getElementById('orderTracker');
-  if(!order){ tracker.classList.remove('show'); return; }
-  tracker.classList.add('show');
-  const badge = document.getElementById('trackerBadge');
-  const text = document.getElementById('trackerText');
-  const sub = document.getElementById('trackerSub');
-  if(order.status === "Delivered"){
-    badge.className = "badge delivered"; text.textContent = "Delivered ✓"; sub.textContent = "Order " + order.orderId;
-  } else {
-    const remaining = order.deliverAt - Date.now();
-    const mins = Math.max(0, Math.floor(remaining/60000));
-    const secs = Math.max(0, Math.floor((remaining%60000)/1000));
-    badge.className = "badge processing"; text.textContent = "Processing";
-    sub.textContent = `Order ${order.orderId} · arriving in ${pad(mins)}:${pad(secs)}`;
-  }
 }
 function openInvoice(){
   if(!currentOrder) return;
@@ -845,8 +733,8 @@ function renderOrderHistory(orders){
     ? `<div class="empty-cart">No orders yet.</div>`
     : orders.map(o => `
         <div class="history-row" onclick='viewOrderFromHistory(${JSON.stringify(o.orderId)})'>
-          <div><div class="history-id">${o.orderId}</div><div class="history-date">${o.orderDate} &middot; ${o.items.reduce((s,i)=>s+i.qty,0)} item(s)</div></div>
-          <div class="history-right"><div class="history-amt">₹${o.grandTotal.toLocaleString('en-IN')}</div><div class="history-status ${o.status==='Delivered'?'delivered':'processing'}">${o.status}</div></div>
+          <div><div class="history-id">${o.orderId}</div><div class="history-date">${o.orderDate} &middot; ${o.items.length} card(s)</div></div>
+          <div class="history-right"><div class="history-amt">₹${o.grandTotal.toLocaleString('en-IN')}</div><div class="history-status delivered">${o.status}</div></div>
         </div>`).join('');
   window.__lastOrders = orders;
   document.getElementById('historyBox').innerHTML = `
@@ -866,10 +754,10 @@ function viewOrderFromHistory(orderId){
 // ---------- Admin ----------
 function openAdminLogin(){
   document.getElementById('adminLoginBox').innerHTML = `
-    <div class="invoice-head"><h2>Owner Login</h2><div class="sub">Leela Mart Admin Dashboard</div></div>
+    <div class="invoice-head"><h2>Owner Login</h2><div class="sub">GiftMint Admin Dashboard</div></div>
     <div class="invoice-body">
       <div class="auth-error" id="adminError"></div>
-      <div class="form-group"><label>Admin Email</label><input type="email" id="adminEmail" placeholder="owner@leelamart.com"></div>
+      <div class="form-group"><label>Admin Email</label><input type="email" id="adminEmail" placeholder="owner@giftmint.com"></div>
       <div class="form-group"><label>Password</label><input type="password" id="adminPassword" placeholder="••••••••"></div>
       <button class="checkout-btn" onclick="submitAdminLogin()">Login</button>
     </div>
@@ -915,15 +803,16 @@ function switchAdminTab(tab){
 async function loadAdminTab(){
   if(adminTab === 'users') await renderAdminUsersTab();
   else if(adminTab === 'failed') await renderAdminFailedTab();
+  else if(adminTab === 'giftcodes') await renderAdminGiftCodesTab();
   else await renderAdminOrdersTab();
 }
 function adminTabsHtml(){
   const tabBtn = (id, label) => `<button class="btn-buy" style="${adminTab===id ? '' : 'background:#eee;color:#333;'}" onclick="switchAdminTab('${id}')">${label}</button>`;
-  return `<div style="display:flex;gap:8px;margin-bottom:16px;">${tabBtn('orders','Orders')}${tabBtn('users','Users')}${tabBtn('failed','Failed Payments')}</div>`;
+  return `<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">${tabBtn('orders','Orders')}${tabBtn('giftcodes','Gift Codes')}${tabBtn('users','Users')}${tabBtn('failed','Failed Payments')}</div>`;
 }
 function adminHeaderHtml(subtitle){
   return `<div class="invoice-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;">
-    <div><h2>Leela Mart — Owner Dashboard</h2><div class="sub">${subtitle}</div></div>
+    <div><h2>GiftMint — Owner Dashboard</h2><div class="sub">${subtitle}</div></div>
     <button onclick="adminLogout()" style="flex-shrink:0;padding:7px 14px;border:1px solid rgba(255,255,255,.5);border-radius:6px;background:rgba(255,255,255,.15);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;">Logout</button>
   </div>`;
 }
@@ -996,7 +885,7 @@ function adminDateFilterHtml(){
     </div>`;
 }
 
-// ---------- Pagination (shared by Orders and Users tabs) ----------
+// ---------- Pagination (shared) ----------
 function paginationHtml(page, pageSize, total, pageFn){
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   if(totalPages <= 1) return '';
@@ -1047,25 +936,24 @@ async function loadAdminOrdersTable(){
     <div class="stat-card"><div class="stat-num">${stats.totalOrders}</div><div class="stat-label">Total Orders</div></div>
     <div class="stat-card"><div class="stat-num">₹${stats.totalRevenue.toLocaleString('en-IN')}</div><div class="stat-label">Total Revenue</div></div>
     <div class="stat-card"><div class="stat-num">${stats.totalCustomers}</div><div class="stat-label">Customers</div></div>
-    <div class="stat-card"><div class="stat-num">${stats.processingCount} / ${stats.deliveredCount}</div><div class="stat-label">Processing / Delivered</div></div>`;
+    <div class="stat-card"><div class="stat-num">${stats.deliveredCount}</div><div class="stat-label">Delivered</div></div>`;
 
   const rowsHtml = orders.length === 0
-    ? `<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--muted);">No orders match.</td></tr>`
+    ? `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--muted);">No orders match.</td></tr>`
     : orders.map(o => `
         <tr>
           <td>${o.orderId}</td>
           <td>${o.customerName}<br><small style="color:var(--muted);">${o.customerEmail}</small></td>
           <td>${o.orderDate}</td>
-          <td>${o.items.reduce((s,i)=>s+i.qty,0)}</td>
+          <td>${o.items.map(i => i.platformName + ' ₹' + i.denomination).join(', ')}</td>
           <td>₹${o.grandTotal.toLocaleString('en-IN')}</td>
           <td>${o.offline ? '<span class="history-status delivered" style="background:#e3f2fd;color:#1565c0;">Offline</span>' : '<span class="history-status" style="background:#f3e5f5;color:#6a1b9a;">Online</span>'}</td>
-          <td><span class="history-status ${o.status==='Delivered'?'delivered':'processing'}">${o.status}</span></td>
           <td><a href="/api/admin/invoice/${encodeURIComponent(o.orderId)}" target="_blank" rel="noopener" style="color:var(--primary);font-weight:700;text-decoration:none;">Invoice</a></td>
         </tr>`).join('');
   const th = (key, label) => `<th style="cursor:pointer;user-select:none;" onclick="setAdminOrderSort('${key}')">${label}${sortIndicator(adminOrderSort.key===key, adminOrderSort.dir)}</th>`;
   document.getElementById('adminOrdersTableWrap').innerHTML = `
     <table class="invoice-table"><thead><tr>
-      ${th('orderId','Order ID')}${th('customer','Customer')}${th('date','Date')}<th>Items</th>${th('amount','Amount')}<th>Source</th>${th('status','Status')}<th>Invoice</th>
+      ${th('orderId','Order ID')}${th('customer','Customer')}${th('date','Date')}<th>Gift Card(s)</th>${th('amount','Amount')}<th>Source</th><th>Invoice</th>
     </tr></thead><tbody>${rowsHtml}</tbody></table>
     ${paginationHtml(page, pageSize, total, 'setAdminOrderPage')}`;
 }
@@ -1086,6 +974,136 @@ async function renderAdminOrdersTab(){
     </div>`;
   await loadAdminOrdersTable();
 }
+
+// ---------- Gift Codes tab ----------
+let giftCodePage = 1;
+let giftCodeSearchValue = '';
+let giftCodeFilter = { platform: '', type: '', status: '' };
+function setGiftCodeFilter(key, value){
+  giftCodeFilter[key] = value;
+  giftCodePage = 1;
+  loadGiftCodesTable().catch(e => alert(e.message));
+}
+function setGiftCodeSearchInput(value){
+  debounceSearch(v => { giftCodeSearchValue = v; giftCodePage = 1; loadGiftCodesTable().catch(e => alert(e.message)); }, value);
+}
+function setGiftCodePage(page){ giftCodePage = page; loadGiftCodesTable().catch(e => alert(e.message)); }
+async function deleteGiftCode(id){
+  if(!confirm('Remove this unsold code?')) return;
+  try{ await api('/api/admin/gift-codes/' + id, { method:'DELETE' }); await renderAdminGiftCodesTab(); }
+  catch(e){ alert(e.message); }
+}
+async function loadStockMatrix(){
+  const { matrix } = await api('/api/admin/gift-codes/stock');
+  const denoms = matrix.length ? matrix[0].denominations.map(d=>d.value) : [];
+  const rows = matrix.map(p => `
+    <tr><th style="text-align:left;">${p.name}</th>
+      ${p.denominations.map(d => `<td class="${d.available>0?'ok':'zero'}">${d.available}</td>`).join('')}
+    </tr>`).join('');
+  document.getElementById('stockMatrixWrap').innerHTML = `
+    <table class="stock-matrix">
+      <thead><tr><th>Platform</th>${denoms.map(v=>`<th>₹${v}</th>`).join('')}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+async function loadGiftCodesTable(){
+  const params = new URLSearchParams();
+  if(giftCodeFilter.platform) params.set('platform', giftCodeFilter.platform);
+  if(giftCodeFilter.type) params.set('type', giftCodeFilter.type);
+  if(giftCodeFilter.status) params.set('status', giftCodeFilter.status);
+  if(giftCodeSearchValue) params.set('search', giftCodeSearchValue);
+  params.set('page', giftCodePage);
+  const { codes, total, pageSize } = await api('/api/admin/gift-codes?' + params.toString());
+  const rowsHtml = codes.length === 0
+    ? `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--muted);">No codes match.</td></tr>`
+    : codes.map(c => `
+        <tr>
+          <td><span class="code-text" style="font-size:11.5px;">${escHtml(c.code)}</span></td>
+          <td>${escHtml(c.platform)}</td>
+          <td>₹${c.denomination.toLocaleString('en-IN')}</td>
+          <td><span class="badge-pill ${c.type==='real'?'badge-real':'badge-synthetic'}">${c.type}</span></td>
+          <td><span class="badge-pill ${c.status==='available'?'badge-available':'badge-redeemed'}">${c.status}</span>${c.orderId ? `<br><small style="color:var(--muted);">${c.orderId}</small>` : ''}</td>
+          <td>${c.status==='available' && c.type==='real' ? `<a onclick="deleteGiftCode(${c.id})" style="color:#c0392b;cursor:pointer;font-weight:700;font-size:12px;">Remove</a>` : ''}</td>
+        </tr>`).join('');
+  document.getElementById('giftCodesTableWrap').innerHTML = `
+    <table class="invoice-table"><thead><tr><th>Code</th><th>Platform</th><th>Value</th><th>Type</th><th>Status</th><th></th></tr></thead><tbody>${rowsHtml}</tbody></table>
+    ${paginationHtml(giftCodePage, pageSize, total, 'setGiftCodePage')}`;
+}
+async function renderAdminGiftCodesTab(){
+  giftCodePage = 1;
+  document.getElementById('adminBox').innerHTML = `
+    ${adminHeaderHtml('Real inventory (handed to logged-in buyers) and synthetic codes (minted for unattributed payments)')}
+    <div class="invoice-body">
+      ${adminTabsHtml()}
+      <h4 style="font-size:12px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;letter-spacing:.5px;">Real Stock On Hand</h4>
+      <div id="stockMatrixWrap"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+        <select id="giftCodeFilterPlatform" onchange="setGiftCodeFilter('platform', this.value)" style="padding:7px 10px;border:1px solid #ddd;border-radius:5px;font-size:12.5px;">
+          <option value="">All Platforms</option>
+          <option value="myntra">Myntra</option><option value="flipkart">Flipkart</option><option value="zepto">Zepto</option><option value="amazon">Amazon</option>
+        </select>
+        <select id="giftCodeFilterType" onchange="setGiftCodeFilter('type', this.value)" style="padding:7px 10px;border:1px solid #ddd;border-radius:5px;font-size:12.5px;">
+          <option value="">Real + Synthetic</option><option value="real">Real Only</option><option value="synthetic">Synthetic Only</option>
+        </select>
+        <select id="giftCodeFilterStatus" onchange="setGiftCodeFilter('status', this.value)" style="padding:7px 10px;border:1px solid #ddd;border-radius:5px;font-size:12.5px;">
+          <option value="">Available + Redeemed</option><option value="available">Available Only</option><option value="redeemed">Redeemed Only</option>
+        </select>
+        <input type="text" placeholder="Search code or order ID..." oninput="setGiftCodeSearchInput(this.value)" style="flex:1;min-width:180px;padding:7px 10px;border:1px solid #ddd;border-radius:5px;font-size:12.5px;">
+      </div>
+      <div id="giftCodesTableWrap" style="overflow-x:auto;"></div>
+    </div>
+    <div class="invoice-footer">
+      <button class="checkout-btn" style="flex:1;" onclick="openAddCodeForm()">Add Real Gift Code(s)</button>
+    </div>`;
+  await loadStockMatrix();
+  await loadGiftCodesTable();
+}
+function openAddCodeForm(){
+  document.getElementById('addCodeBox').innerHTML = `
+    <div class="invoice-head"><h2>Add Real Gift Code</h2><div class="sub">A code you physically hold - handed to the next matching buyer</div></div>
+    <div class="invoice-body">
+      <div class="auth-error" id="addCodeError"></div>
+      <div class="form-group"><label>Platform</label>
+        <select id="addCodePlatform"><option value="myntra">Myntra</option><option value="flipkart">Flipkart</option><option value="zepto">Zepto</option><option value="amazon">Amazon</option></select>
+      </div>
+      <div class="form-group"><label>Denomination (₹)</label>
+        <select id="addCodeDenom">${[100,200,500,1000,1500,2000,2500,3000].map(v=>`<option value="${v}">₹${v}</option>`).join('')}</select>
+      </div>
+      <div class="form-group"><label>Code</label><input type="text" id="addCodeValue" placeholder="e.g. FLPKT-1234-5678-9012"></div>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:10px;">Or paste multiple, one per line as <code>platform,denomination,code</code>: </p>
+      <div class="form-group"><textarea id="addCodeBulk" rows="3" placeholder="flipkart,500,FLPKT-XXXX-XXXX-XXXX" style="width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:5px;font-size:12.5px;font-family:'Courier New',monospace;"></textarea></div>
+      <button class="checkout-btn" onclick="submitAddCode()">Add to Inventory</button>
+    </div>
+    <div class="invoice-footer"><button class="btn-close-invoice" onclick="closeAddCodeForm()">Cancel</button></div>`;
+  document.getElementById('addCodeOverlay').classList.add('open');
+}
+function closeAddCodeForm(){ document.getElementById('addCodeOverlay').classList.remove('open'); }
+async function submitAddCode(){
+  const errEl = document.getElementById('addCodeError');
+  errEl.style.display = 'none';
+  const bulkText = document.getElementById('addCodeBulk').value.trim();
+  let codes = [];
+  if(bulkText){
+    codes = bulkText.split('\n').map(l => l.trim()).filter(Boolean).map(line => {
+      const [platform, denomination, ...rest] = line.split(',').map(s => s.trim());
+      return { platform, denomination: Number(denomination), code: rest.join(',') };
+    });
+  } else {
+    const code = document.getElementById('addCodeValue').value.trim();
+    if(!code){ errEl.textContent = 'Please enter a code.'; errEl.style.display = 'block'; return; }
+    codes = [{ platform: document.getElementById('addCodePlatform').value, denomination: Number(document.getElementById('addCodeDenom').value), code }];
+  }
+  try{
+    const result = await api('/api/admin/gift-codes', { method:'POST', body: JSON.stringify({ codes }) });
+    const failed = result.results.filter(r => !r.ok);
+    if(failed.length){ errEl.textContent = `${result.added} added, ${failed.length} failed: ${failed.map(f=>f.error).join('; ')}`; errEl.style.display = 'block'; return; }
+    closeAddCodeForm();
+    await renderAdminGiftCodesTab();
+  } catch(e){
+    errEl.textContent = e.message; errEl.style.display = 'block';
+  }
+}
+
 // ---------- Users tab ----------
 let adminUserPage = 1;
 let adminUserSearchValue = '';
@@ -1180,13 +1198,12 @@ async function renderAdminFailedTab(){
 }
 function openOfflineOrderForm(){
   document.getElementById('offlineOrderBox').innerHTML = `
-    <div class="invoice-head"><h2>Add Offline Order</h2><div class="sub">Record a payment received outside the website</div></div>
+    <div class="invoice-head"><h2>Add Offline Order</h2><div class="sub">Record a payment received outside the website — a random-platform synthetic code is minted for the exact amount</div></div>
     <div class="invoice-body">
       <div class="auth-error" id="offlineError"></div>
       <div class="form-group"><label>Paste Bank Credit SMS (optional)</label><input type="text" id="offlineSmsText" placeholder="e.g. Rs.500.00 credited to A/c XX1234 via UPI" oninput="autoFillFromSms()"></div>
       <div class="form-group"><label>Customer Name</label><input type="text" id="offlineName" placeholder="e.g. Walk-in Customer"></div>
       <div class="form-group"><label>Amount Received (₹)</label><input type="number" id="offlineAmount" placeholder="500" min="1"></div>
-      <div class="form-group"><label>Item / Note (optional)</label><input type="text" id="offlineNote" placeholder="e.g. 2x Cotton T-Shirt"></div>
       <button class="checkout-btn" onclick="submitOfflineOrder()">Add to Records</button>
     </div>
     <div class="invoice-footer"><button class="btn-close-invoice" onclick="closeOfflineOrderForm()">Cancel</button></div>`;
@@ -1206,34 +1223,34 @@ async function submitOfflineOrder(){
   const smsText = document.getElementById('offlineSmsText').value.trim();
   const customerName = document.getElementById('offlineName').value.trim() || "Walk-in Customer";
   const amount = parseFloat(document.getElementById('offlineAmount').value);
-  const note = document.getElementById('offlineNote').value.trim();
   const errEl = document.getElementById('offlineError');
   errEl.style.display = "none";
   try{
-    await api('/api/admin/offline-orders', { method:'POST', body: JSON.stringify({ customerName, amount, note, smsText }) });
+    await api('/api/admin/offline-orders', { method:'POST', body: JSON.stringify({ customerName, amount, smsText }) });
     closeOfflineOrderForm();
-    await renderAdminDashboard();
+    await loadAdminTab();
   } catch(e){
     errEl.textContent = e.message; errEl.style.display = "block";
   }
 }
 
 // ---------- Init ----------
+async function loadCatalog(){
+  try{
+    catalog = await api('/api/catalog');
+    renderCatalog();
+  } catch(e){ console.error('Failed to load catalog', e); }
+}
 async function init(){
   loadCart();
   updateCartCount();
-  try{
-    products = await api('/api/products');
-  } catch(e){ console.error('Failed to load products', e); }
+  await loadCatalog();
   try{
     const me = await api('/api/auth/me');
     currentUser = me.user;
   } catch(e){}
   renderAuthArea();
-  renderCategories();
-  renderProducts();
   renderCart();
-  setInterval(tickOrders, 1000);
 
   // If the owner still has a valid (not idle-expired) admin session,
   // reopen the dashboard with fresh data instead of dropping them back to
