@@ -524,6 +524,16 @@ router.get('/api/admin/me', async (req, res) => {
   sendJson(res, 200, { ok: true });
 });
 
+// Customer-facing label for the internal `source` tag, so the invoice
+// reads like a normal receipt instead of showing an implementation detail
+// like "razorpay-webhook".
+const ORDER_SOURCE_LABELS = {
+  'razorpay-checkout': 'Razorpay Checkout',
+  'razorpay-webhook': 'UPI Payment',
+  'sms-paste': 'Bank SMS (Manual Entry)',
+  'manual': 'Manual Entry'
+};
+
 // Renders a standalone, print-ready Tax Invoice page for one order. Works
 // for every order (self-placed, offline, or Razorpay) since it's looked up
 // from the admin's own view rather than a customer session - the
@@ -563,7 +573,7 @@ function renderInvoiceHtml(o) {
   <div class="row">
     <div class="box"><h4>Billed To</h4><p>${esc(o.customerName)}<br>${esc(o.customerEmail)}</p></div>
     <div class="box"><h4>Delivery Address</h4><p>${esc(o.address)}</p></div>
-    <div class="box"><h4>Source</h4><p>${esc(o.offline ? 'Offline' : 'Online')}${o.source ? ' &middot; ' + esc(o.source) : ''}</p></div>
+    <div class="box"><h4>Source</h4><p>${esc(o.offline ? 'Offline' : 'Online')}${o.source ? ' &middot; ' + esc(ORDER_SOURCE_LABELS[o.source] || o.source) : ''}</p></div>
   </div>
   <table><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table>
   <div class="totals">
