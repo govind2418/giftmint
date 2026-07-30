@@ -584,6 +584,18 @@ router.get('/api/orders/:id', async (req, res, params) => {
   sendJson(res, 200, order);
 });
 
+// Same printable template as the admin invoice, gated by ownership instead
+// of admin auth - so a customer's own invoice is pixel-identical to what
+// the owner sees, from one shared template instead of two to keep in sync.
+router.get('/api/orders/:id/invoice', async (req, res, params) => {
+  const u = await getCurrentUser(req);
+  if (!u) { res.writeHead(401); return res.end('Please log in.'); }
+  const order = await db.getOrderById(params.id);
+  if (!order || order.customerEmail !== u.email) { res.writeHead(404); return res.end('Order not found.'); }
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(renderInvoiceHtml(order));
+});
+
 // ---------------------------------------------------------------------------
 // Admin / Owner dashboard
 // ---------------------------------------------------------------------------
@@ -645,7 +657,7 @@ function renderInvoiceHtml(o) {
     --mint:#10B981; --mint-dark:#059669; --mint-light:#ECFDF5;
     --text:#0F172A; --muted:#64748B; --border:#E5E7EB; --bg:#F5F6FB;
   }
-  *{box-sizing:border-box;}
+  *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;}
   body{font-family:'Inter',Arial,Helvetica,sans-serif;color:var(--text);background:var(--bg);margin:0;padding:32px 16px;}
   .sheet{max-width:700px;margin:0 auto;background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(15,23,42,.08);overflow:hidden;border:1px solid var(--border);}
   .print-bar{max-width:700px;margin:0 auto 16px;text-align:right;}

@@ -270,7 +270,7 @@
 </div>
 
 <div class="invoice-overlay" id="invoiceOverlay">
-  <div class="invoice-box" id="invoiceBox"></div>
+  <div class="invoice-box" id="invoiceBox" style="max-width:780px;"></div>
 </div>
 
 <div class="invoice-overlay" id="authOverlay">
@@ -700,36 +700,22 @@ function copyCode(btn, code){
     setTimeout(() => { btn.textContent = old; btn.classList.remove('copied'); }, 1200);
   }).catch(() => alert(code));
 }
+// Loads the exact same printable template the owner sees (server-rendered,
+// gated by order ownership) inside an iframe - one shared invoice design
+// instead of a second copy kept in sync by hand.
 function renderInvoice(){
   if(!currentOrder) return;
   const o = currentOrder;
-  const rowsHtml = o.items.map((i, idx) => `
-    <tr>
-      <td>${escHtml(i.platformName)} Gift Card</td>
-      <td>₹${i.denomination.toLocaleString('en-IN')}</td>
-      <td><div class="code-cell"><span class="code-text">${escHtml(i.code)}</span><button class="copy-btn" onclick="copyCode(this,'${escJs(i.code)}')">Copy</button></div></td>
-    </tr>`).join('');
   document.getElementById('invoiceBox').innerHTML = `
-    <div class="invoice-head">
-      <h2>GiftMint</h2>
-      <div class="sub">Gift Card Invoice &middot; Order ID: ${o.orderId}</div>
-      <div class="sub">${o.orderDate}${currentUser ? ' &middot; ' + currentUser.name + ' (' + currentUser.email + ')' : ''}</div>
-    </div>
-    <div class="invoice-body">
-      <div class="invoice-status"><span class="dot"></span> Delivered — code(s) below</div>
-      <div class="invoice-section"><h4>Your Gift Card(s)</h4>
-        <table class="invoice-table"><thead><tr><th>Gift Card</th><th>Value</th><th>Code</th></tr></thead><tbody>${rowsHtml}</tbody></table>
-      </div>
-      <div class="invoice-totals">
-        ${o.tax > 0 ? `<div><span>Subtotal</span><span>₹${o.subtotal.toLocaleString('en-IN')}</span></div>
-        <div><span>Platform Fee (5%)</span><span>₹${o.tax.toLocaleString('en-IN')}</span></div>` : ''}
-        <div class="grand"><span>Grand Total</span><span>₹${o.grandTotal.toLocaleString('en-IN')}</span></div>
-      </div>
-    </div>
+    <iframe id="invoiceFrame" src="/api/orders/${encodeURIComponent(o.orderId)}/invoice" style="width:100%;height:72vh;border:none;display:block;background:var(--bg);"></iframe>
     <div class="invoice-footer">
       <button class="btn-close-invoice" onclick="closeInvoice()">Close</button>
-      <button class="btn-print" onclick="window.print()">Print Invoice</button>
+      <button class="btn-print" onclick="printInvoiceFrame()">Print Invoice</button>
     </div>`;
+}
+function printInvoiceFrame(){
+  const frame = document.getElementById('invoiceFrame');
+  if(frame && frame.contentWindow) frame.contentWindow.print();
 }
 function openInvoice(){
   if(!currentOrder) return;
