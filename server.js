@@ -212,22 +212,54 @@ async function generateSyntheticCode(conn, platform, denomination, orderId) {
 }
 
 // Turns a captured payment amount that has no matching real cart (a webhook
-// payment or a manually-entered offline payment) into a full order: picks a
-// random platform, prices the "gift card" at exactly the amount received
-// (the real money is the only source of truth), and mints a one-off
-// synthetic code for it - never one of the real codes reserved for
-// authenticated, logged-in buyers.
+// Randomly breaks `amount` into a multiset of standard denomination tiers
+// that sum to exactly that amount (e.g. 200 -> [200] or [100,100] or
+// [100,100] again on a different call - genuinely random each time, not
+// deterministic, so repeat payments of the same amount don't all look
+// identical). Returns null if no exact combination of tiers reaches the
+// amount within a reasonable number of items (e.g. odd amounts like 750) -
+// caller then falls back to a single custom-value code for the exact amount.
+function randomDenominationSplit(amount) {
+  const MAX_ITEMS = 5;
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const combo = [];
+    let remaining = amount;
+    while (remaining > 0 && combo.length < MAX_ITEMS) {
+      const candidates = DENOMINATIONS.filter(d => d <= remaining);
+      if (candidates.length === 0) break;
+      combo.push(candidates[Math.floor(Math.random() * candidates.length)]);
+      remaining -= combo[combo.length - 1];
+    }
+    if (remaining === 0) return combo;
+  }
+  return null;
+}
+
+// Turns a captured payment amount that has no matching real cart (a webhook
+// payment or a manually-entered offline payment) into a full order. Splits
+// the amount into one or more gift cards - sometimes a single card for the
+// whole amount, sometimes several smaller ones, each on an independently
+// random platform - so the same amount doesn't always turn into the same
+// "shape" of invoice. The real money received is the only source of truth
+// (the split always sums to exactly what was paid); these codes are always
+// freshly minted, never one of the real codes reserved for authenticated,
+// logged-in buyers.
 async function synthesizeGiftCodeOrder({ amount, name, userEmail, customerEmail, source, offline, contact }) {
-  const denomination = Math.max(1, Math.round(amount));
-  const platform = PLATFORMS[Math.floor(Math.random() * PLATFORMS.length)];
+  const totalAmount = Math.max(1, Math.round(amount));
+  const split = randomDenominationSplit(totalAmount) || [totalAmount];
   const orderId = newOrderId(offline ? 'GM-OFF' : 'GM-RP');
 
   return db.withTransaction(async conn => {
-    const code = await generateSyntheticCode(conn, platform.id, denomination, orderId);
+    const items = [];
+    for (const denomination of split) {
+      const platform = PLATFORMS[Math.floor(Math.random() * PLATFORMS.length)];
+      const code = await generateSyntheticCode(conn, platform.id, denomination, orderId);
+      items.push({ platform: platform.id, platformName: platform.name, denomination, code });
+    }
     const order = {
       orderId, orderDate: formatOrderDate(), createdAt: Date.now(),
-      address: 'Digital delivery', items: [{ platform: platform.id, platformName: platform.name, denomination, code }],
-      subtotal: denomination, tax: 0, delivery: 0, grandTotal: denomination,
+      address: 'Digital delivery', items,
+      subtotal: totalAmount, tax: 0, delivery: 0, grandTotal: totalAmount,
       status: 'Delivered', offline: !!offline, source,
       userEmail: userEmail || null, customerName: name, customerEmail: customerEmail || '—',
       contact: contact || null
