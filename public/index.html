@@ -625,14 +625,35 @@ function payViaUpiIntent(){
   });
 }
 let upiPollHandle = null;
+
+// A single generic "upi://" link is unreliable on its own - once a phone
+// remembers one app (e.g. WhatsApp) as the default handler for that scheme,
+// it skips the app-chooser entirely and always reopens that same app. Each
+// major app also accepts the identical UPI params under its own URI scheme,
+// so we build one deep link per app and let the customer pick explicitly
+// instead of depending on the OS's (stateful, easily "stuck") default.
+const UPI_APPS = [
+  { label: 'Google Pay', scheme: 'tez://upi/pay' },
+  { label: 'PhonePe', scheme: 'phonepe://pay' },
+  { label: 'Paytm', scheme: 'paytmmp://pay' },
+  { label: 'Other UPI App', scheme: 'upi://pay' }
+];
+function buildAppUpiUri(scheme, p){
+  const qs = new URLSearchParams({ pa: p.vpa, pn: p.payeeName, am: Number(p.amount).toFixed(2), cu: 'INR', tn: p.note, tr: p.referenceId }).toString();
+  return `${scheme}?${qs}`;
+}
 function openUpiIntentModal(result){
   const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(result.upiUri);
+  const appButtonsHtml = UPI_APPS.map(app => `
+    <a href="${buildAppUpiUri(app.scheme, result.upiParams)}" class="checkout-btn" style="display:block;text-decoration:none;box-sizing:border-box;margin-bottom:8px;background:#fff;color:var(--primary);border:1.5px solid var(--primary);">${app.label}</a>
+  `).join('');
   document.getElementById('upiIntentBox').innerHTML = `
     <div class="invoice-head"><h2>Pay via UPI</h2><div class="sub">₹${result.grandTotal.toLocaleString('en-IN')} &middot; Ref: ${escHtml(result.pendingOrderId)}</div></div>
     <div class="invoice-body" style="text-align:center;">
       <img src="${qrUrl}" alt="UPI QR" style="width:200px;height:200px;margin:0 auto 16px;display:block;border:1px solid var(--border);border-radius:8px;">
-      <a href="${result.upiUri}" class="checkout-btn" style="display:block;text-decoration:none;margin-bottom:14px;box-sizing:border-box;">Open in UPI App</a>
-      <div id="upiWaitStatus" style="font-size:13px;color:var(--muted);">Waiting for payment confirmation…</div>
+      <p style="font-size:11.5px;color:var(--muted);margin-bottom:10px;">On a phone, pick your UPI app directly instead of a generic link:</p>
+      <div style="text-align:left;margin-bottom:6px;">${appButtonsHtml}</div>
+      <div id="upiWaitStatus" style="font-size:13px;color:var(--muted);margin-top:8px;">Waiting for payment confirmation…</div>
       <p style="font-size:11.5px;color:var(--muted);margin-top:14px;">Payments made this way are manually confirmed by the owner - this can take a little while. Don't close this window; it'll update automatically.</p>
     </div>
     <div class="invoice-footer"><button class="btn-close-invoice" onclick="closeUpiIntentModal()">Cancel</button></div>`;

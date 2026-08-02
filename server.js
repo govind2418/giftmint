@@ -656,11 +656,16 @@ router.post('/api/payments/upi-intent/create', async (req, res) => {
 
   const id = newOrderId('GM-UPI');
   await db.createPendingUpiOrder({ id, userEmail: u.email, items: lines, subtotal, platformFee, grandTotal });
-  const upiUri = buildUpiIntentUri({
-    vpa: GIFTMINT_UPI_VPA, payeeName: 'GiftMint', amount: grandTotal,
-    note: `GiftMint ${id}`, referenceId: id
-  });
-  sendJson(res, 200, { pendingOrderId: id, upiUri, grandTotal });
+  const upiParams = { vpa: GIFTMINT_UPI_VPA, payeeName: 'GiftMint', amount: grandTotal, note: `GiftMint ${id}`, referenceId: id };
+  const upiUri = buildUpiIntentUri(upiParams);
+  // upiParams is sent alongside the generic upiUri (used for the QR code,
+  // which is app-agnostic since the customer picks the scanning app
+  // themselves) so the frontend can also build app-specific deep links
+  // (Google Pay/PhonePe/Paytm each use their own URI scheme) - relying on a
+  // single generic "upi://" link lets the phone silently reuse whichever
+  // app it last remembered as the default handler for that scheme, instead
+  // of letting the customer choose.
+  sendJson(res, 200, { pendingOrderId: id, upiUri, upiParams, grandTotal });
 });
 
 // Customer polls this while waiting for the admin to confirm their payment.
