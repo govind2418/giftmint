@@ -265,12 +265,17 @@
     <div class="total-row" style="font-weight:500;font-size:13.5px;color:var(--muted);"><span>Subtotal</span><span id="cartSubtotal">₹0</span></div>
     <div class="total-row" style="font-weight:500;font-size:13.5px;color:var(--muted);"><span>Platform Fee (5%)</span><span id="cartFee">₹0</span></div>
     <div class="total-row"><span>Total</span><span id="cartTotal">₹0</span></div>
-    <button class="checkout-btn" onclick="placeOrder()">Place Order</button>
+    <button class="checkout-btn" onclick="placeOrder()">Pay with Razorpay</button>
+    <button class="checkout-btn" style="background:#fff;color:var(--primary);border:1.5px solid var(--primary);margin-top:8px;" onclick="payViaUpiIntent()">Pay via UPI Intent</button>
   </div>
 </div>
 
 <div class="invoice-overlay" id="invoiceOverlay">
   <div class="invoice-box" id="invoiceBox" style="max-width:780px;"></div>
+</div>
+
+<div class="invoice-overlay" id="upiIntentOverlay">
+  <div class="invoice-box" id="upiIntentBox" style="max-width:420px;"></div>
 </div>
 
 <div class="invoice-overlay" id="authOverlay">
@@ -604,6 +609,60 @@ function openRazorpayCheckout(order){
   rzp.open();
 }
 
+// ---------- Checkout / Direct UPI Intent (manual admin confirmation) ----------
+function payViaUpiIntent(){
+  const keys = Object.keys(cart);
+  if(keys.length===0) return;
+  requireLogin(async () => {
+    const items = keys.map(key => {
+      const [platform, denom] = key.split(':');
+      return { platform, denomination: Number(denom), qty: cart[key] };
+    });
+    try{
+      const result = await api('/api/payments/upi-intent/create', { method:'POST', body: JSON.stringify({ items }) });
+      openUpiIntentModal(result);
+    } catch(e){ alert(e.message); }
+  });
+}
+let upiPollHandle = null;
+function openUpiIntentModal(result){
+  const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(result.upiUri);
+  document.getElementById('upiIntentBox').innerHTML = `
+    <div class="invoice-head"><h2>Pay via UPI</h2><div class="sub">₹${result.grandTotal.toLocaleString('en-IN')} &middot; Ref: ${escHtml(result.pendingOrderId)}</div></div>
+    <div class="invoice-body" style="text-align:center;">
+      <img src="${qrUrl}" alt="UPI QR" style="width:200px;height:200px;margin:0 auto 16px;display:block;border:1px solid var(--border);border-radius:8px;">
+      <a href="${result.upiUri}" class="checkout-btn" style="display:block;text-decoration:none;margin-bottom:14px;box-sizing:border-box;">Open in UPI App</a>
+      <div id="upiWaitStatus" style="font-size:13px;color:var(--muted);">Waiting for payment confirmation…</div>
+      <p style="font-size:11.5px;color:var(--muted);margin-top:14px;">Payments made this way are manually confirmed by the owner - this can take a little while. Don't close this window; it'll update automatically.</p>
+    </div>
+    <div class="invoice-footer"><button class="btn-close-invoice" onclick="closeUpiIntentModal()">Cancel</button></div>`;
+  document.getElementById('upiIntentOverlay').classList.add('open');
+  clearInterval(upiPollHandle);
+  upiPollHandle = setInterval(() => pollUpiIntentStatus(result.pendingOrderId), 3000);
+}
+async function pollUpiIntentStatus(id){
+  try{
+    const s = await api('/api/payments/upi-intent/' + encodeURIComponent(id) + '/status');
+    if(s.status === 'approved'){
+      clearInterval(upiPollHandle);
+      closeUpiIntentModal();
+      currentOrder = await api('/api/orders/' + encodeURIComponent(s.orderId));
+      renderInvoice();
+      document.getElementById('invoiceOverlay').classList.add('open');
+      cart = {}; updateCartCount(); saveCart(); renderCart();
+      loadCatalog();
+    } else if(s.status === 'rejected'){
+      clearInterval(upiPollHandle);
+      const el = document.getElementById('upiWaitStatus');
+      if(el){ el.textContent = 'Payment was not confirmed. Please contact support or try again.'; el.style.color = '#c0392b'; }
+    }
+  } catch(e){ /* keep polling silently - transient network hiccup */ }
+}
+function closeUpiIntentModal(){
+  clearInterval(upiPollHandle);
+  document.getElementById('upiIntentOverlay').classList.remove('open');
+}
+
 // ---------- Profile ----------
 let profilePhotoDataUrl = null; // pending photo change, until saved
 async function openProfile(){
@@ -809,11 +868,12 @@ async function loadAdminTab(){
   if(adminTab === 'users') await renderAdminUsersTab();
   else if(adminTab === 'failed') await renderAdminFailedTab();
   else if(adminTab === 'giftcodes') await renderAdminGiftCodesTab();
+  else if(adminTab === 'upipending') await renderAdminUpiPendingTab();
   else await renderAdminOrdersTab();
 }
 function adminTabsHtml(){
   const tabBtn = (id, label) => `<button style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;${adminTab===id ? 'border:none;background:var(--primary);color:#fff;' : 'border:1px solid var(--border);background:#fff;color:var(--muted);'}" onclick="switchAdminTab('${id}')">${label}</button>`;
-  return `<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">${tabBtn('orders','Orders')}${tabBtn('giftcodes','Gift Codes')}${tabBtn('users','Users')}${tabBtn('failed','Failed Payments')}</div>`;
+  return `<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">${tabBtn('orders','Orders')}${tabBtn('giftcodes','Gift Codes')}${tabBtn('upipending','UPI Pending')}${tabBtn('users','Users')}${tabBtn('failed','Failed Payments')}</div>`;
 }
 function adminHeaderHtml(subtitle){
   return `<div class="invoice-head admin-head" style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;">
@@ -1213,6 +1273,52 @@ async function renderAdminFailedTab(){
       </div>
       <div style="overflow-x:auto;">
         <table class="invoice-table"><thead><tr><th>Payment ID</th><th>Amount</th><th>Customer</th><th>Reason</th><th>When</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+      </div>
+    </div>`;
+}
+
+// ---------- UPI Pending tab (manual confirmation for direct-UPI orders) ----------
+let upiPendingStatusFilter = 'pending';
+function setUpiPendingFilter(status){
+  upiPendingStatusFilter = status;
+  loadAdminTab().catch(e => alert(e.message));
+}
+async function approveUpiPending(id){
+  if(!confirm('Confirm this payment actually arrived and deliver the gift code(s)?')) return;
+  try{ await api('/api/admin/upi-pending/' + encodeURIComponent(id) + '/approve', { method:'POST' }); await loadAdminTab(); }
+  catch(e){ alert(e.message); }
+}
+async function rejectUpiPending(id){
+  const note = prompt('Optional note (e.g. "payment never received"):') || '';
+  try{ await api('/api/admin/upi-pending/' + encodeURIComponent(id) + '/reject', { method:'POST', body: JSON.stringify({ note }) }); await loadAdminTab(); }
+  catch(e){ alert(e.message); }
+}
+async function renderAdminUpiPendingTab(){
+  const { pending } = await api('/api/admin/upi-pending?status=' + encodeURIComponent(upiPendingStatusFilter));
+
+  const rowsHtml = pending.length === 0
+    ? `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted);">Nothing here.</td></tr>`
+    : pending.map(p => `
+        <tr>
+          <td>${escHtml(p.id)}</td>
+          <td>${escHtml(p.userEmail)}</td>
+          <td>${p.items.map(i => escHtml(i.platformName) + ' ₹' + i.denomination + (i.qty > 1 ? ' x' + i.qty : '')).join(', ')}</td>
+          <td>₹${p.grandTotal.toLocaleString('en-IN')}</td>
+          <td>${p.status === 'pending' ? `
+            <a onclick="approveUpiPending('${p.id}')" style="color:var(--mint-dark);cursor:pointer;font-weight:700;font-size:12px;margin-right:12px;">Approve</a>
+            <a onclick="rejectUpiPending('${p.id}')" style="color:#c0392b;cursor:pointer;font-weight:700;font-size:12px;">Reject</a>
+          ` : `<span class="badge-pill ${p.status==='approved'?'badge-available':'badge-redeemed'}">${p.status}</span>${p.adminNote ? '<br><small style="color:var(--muted);">' + escHtml(p.adminNote) + '</small>' : ''}`}</td>
+        </tr>`).join('');
+
+  document.getElementById('adminBox').innerHTML = `
+    ${adminHeaderHtml('Direct-UPI orders (own VPA, no gateway) awaiting manual payment confirmation')}
+    <div class="invoice-body">
+      ${adminTabsHtml()}
+      <div style="display:flex;gap:8px;margin-bottom:14px;">
+        ${['pending','approved','rejected','all'].map(s => `<button style="padding:7px 14px;font-size:12.5px;border-radius:6px;cursor:pointer;${upiPendingStatusFilter===s?'border:none;background:var(--primary);color:#fff;':'border:1px solid var(--border);background:#fff;color:var(--muted);'}" onclick="setUpiPendingFilter('${s}')">${s.charAt(0).toUpperCase()+s.slice(1)}</button>`).join('')}
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="invoice-table"><thead><tr><th>Reference</th><th>Customer</th><th>Gift Card(s)</th><th>Amount</th><th>Action</th></tr></thead><tbody>${rowsHtml}</tbody></table>
       </div>
     </div>`;
 }

@@ -22,6 +22,10 @@ const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
 // webhook/offline synthetic orders price at exactly the amount received,
 // with no "before checkout" step to add a fee on top of.
 const PLATFORM_FEE_RATE = 0.05;
+// Our own UPI ID for the "pay via UPI Intent directly" checkout option -
+// bypasses Razorpay entirely, so there's no automatic payment-success
+// webhook; an admin manually confirms these (see /api/admin/upi-pending).
+const GIFTMINT_UPI_VPA = process.env.GIFTMINT_UPI_VPA || '';
 
 const router = new Router();
 
@@ -91,6 +95,22 @@ async function isAdmin(req) {
 // cartItems: [{platform, denomination, qty}] from the client - price is
 // always the face value of the denomination itself (never client-supplied),
 // and both platform and denomination are validated against our fixed catalog.
+// Checks every cart line against real stock on hand. Returns an error
+// message string for the first line that's short, or null if everything's
+// available - shared by every checkout path that draws on real inventory
+// (Razorpay create-order, direct-UPI intent create).
+async function checkStockAvailability(lines) {
+  const stock = await db.getRealStock();
+  const stockMap = new Map(stock.map(s => [`${s.platform}:${s.denomination}`, s.available]));
+  for (const line of lines) {
+    const available = stockMap.get(`${line.platform}:${line.denomination}`) || 0;
+    if (available < line.qty) {
+      return `Sorry, only ${available} in stock for ${line.platformName} ₹${line.denomination}.`;
+    }
+  }
+  return null;
+}
+
 function computeCartLines(cartItems) {
   const lines = [];
   for (const ci of cartItems || []) {
@@ -211,7 +231,23 @@ async function generateSyntheticCode(conn, platform, denomination, orderId) {
   }
 }
 
-// Turns a captured payment amount that has no matching real cart (a webhook
+// Claims real stock for each cart line, minting a synthetic code on the spot
+// for any shortfall (stock ran out between checkout and this claim - rare,
+// covered by an earlier stock check plus row-locking here, but the
+// payment's already been taken so the buyer still gets something). Shared by
+// every path that turns an authenticated cart into a real order: Razorpay
+// verify, and manually-approved direct-UPI orders.
+async function claimCartItems(conn, lines, orderId) {
+  const items = [];
+  for (const line of lines) {
+    const codes = await db.claimRealCodes(conn, { platform: line.platform, denomination: line.denomination, qty: line.qty, orderId });
+    const shortfall = line.qty - codes.length;
+    for (let i = 0; i < shortfall; i++) codes.push(await generateSyntheticCode(conn, line.platform, line.denomination, orderId));
+    for (const code of codes) items.push({ platform: line.platform, platformName: line.platformName, denomination: line.denomination, code });
+  }
+  return items;
+}
+
 // Randomly breaks `amount` into a multiset of standard denomination tiers
 // that sum to exactly that amount (e.g. 200 -> [200] or [100,100] or
 // [100,100] again on a different call - genuinely random each time, not
@@ -503,14 +539,8 @@ router.post('/api/payments/create-order', async (req, res) => {
   // if we don't actually hold enough of a combo, the purchase is blocked
   // here rather than ever substituting a synthetic code for a paying,
   // logged-in customer.
-  const stock = await db.getRealStock();
-  const stockMap = new Map(stock.map(s => [`${s.platform}:${s.denomination}`, s.available]));
-  for (const line of lines) {
-    const available = stockMap.get(`${line.platform}:${line.denomination}`) || 0;
-    if (available < line.qty) {
-      return sendJson(res, 400, { error: `Sorry, only ${available} in stock for ${line.platformName} ₹${line.denomination}.` });
-    }
-  }
+  const stockError = await checkStockAvailability(lines);
+  if (stockError) return sendJson(res, 400, { error: stockError });
 
   const subtotal = lines.reduce((s, l) => s + l.denomination * l.qty, 0);
   const platformFee = Math.round(subtotal * PLATFORM_FEE_RATE);
@@ -574,17 +604,7 @@ router.post('/api/payments/verify', async (req, res) => {
 
   const orderId = newOrderId('GM');
   const order = await db.withTransaction(async conn => {
-    const items = [];
-    for (const line of pending.lines) {
-      const codes = await db.claimRealCodes(conn, { platform: line.platform, denomination: line.denomination, qty: line.qty, orderId });
-      // Stock ran out between checkout and payment (rare - covered by the
-      // create-order check above plus row-locking here). The payment is
-      // already captured, so the customer still gets a code for it, minted
-      // on the spot instead of the real one that's no longer available.
-      const shortfall = line.qty - codes.length;
-      for (let i = 0; i < shortfall; i++) codes.push(await generateSyntheticCode(conn, line.platform, line.denomination, orderId));
-      for (const code of codes) items.push({ platform: line.platform, platformName: line.platformName, denomination: line.denomination, code });
-    }
+    const items = await claimCartItems(conn, pending.lines, orderId);
     const orderObj = {
       orderId, orderDate: formatOrderDate(), createdAt: Date.now(),
       address: 'Digital delivery',
@@ -597,6 +617,59 @@ router.post('/api/payments/verify', async (req, res) => {
     return orderObj;
   });
   sendJson(res, 200, order);
+});
+
+// ---------------------------------------------------------------------------
+// Direct UPI Intent checkout - an alternative to Razorpay for the same
+// authenticated cart. Pays our own VPA directly, so there's no gateway
+// webhook to confirm it automatically; the order sits as 'pending' until an
+// admin manually confirms the money arrived (see /api/admin/upi-pending
+// below). Still only ever draws on real inventory, same stock rules as the
+// Razorpay path.
+// ---------------------------------------------------------------------------
+function buildUpiIntentUri({ vpa, payeeName, amount, note, referenceId }) {
+  const params = new URLSearchParams({
+    pa: vpa, pn: payeeName, am: amount.toFixed(2), cu: 'INR', tn: note, tr: referenceId
+  });
+  return `upi://pay?${params.toString()}`;
+}
+
+router.post('/api/payments/upi-intent/create', async (req, res) => {
+  if (!GIFTMINT_UPI_VPA) {
+    return sendJson(res, 500, { error: 'Direct UPI payments are not configured on this server (missing GIFTMINT_UPI_VPA).' });
+  }
+  const u = await getCurrentUser(req);
+  if (!u) return sendJson(res, 401, { error: 'Please log in to pay.' });
+
+  const body = await readJsonBody(req);
+  let lines;
+  try { lines = computeCartLines(body.items || []); }
+  catch (e) { return sendJson(res, 400, { error: e.message }); }
+
+  const stockError = await checkStockAvailability(lines);
+  if (stockError) return sendJson(res, 400, { error: stockError });
+
+  const subtotal = lines.reduce((s, l) => s + l.denomination * l.qty, 0);
+  const platformFee = Math.round(subtotal * PLATFORM_FEE_RATE);
+  const grandTotal = subtotal + platformFee;
+  if (grandTotal < 1) return sendJson(res, 400, { error: 'Order amount must be at least Rs. 1.' });
+
+  const id = newOrderId('GM-UPI');
+  await db.createPendingUpiOrder({ id, userEmail: u.email, items: lines, subtotal, platformFee, grandTotal });
+  const upiUri = buildUpiIntentUri({
+    vpa: GIFTMINT_UPI_VPA, payeeName: 'GiftMint', amount: grandTotal,
+    note: `GiftMint ${id}`, referenceId: id
+  });
+  sendJson(res, 200, { pendingOrderId: id, upiUri, grandTotal });
+});
+
+// Customer polls this while waiting for the admin to confirm their payment.
+router.get('/api/payments/upi-intent/:id/status', async (req, res, params) => {
+  const u = await getCurrentUser(req);
+  if (!u) return sendJson(res, 401, { error: 'Please log in.' });
+  const pending = await db.getPendingUpiOrder(params.id);
+  if (!pending || pending.userEmail !== u.email) return sendJson(res, 404, { error: 'Not found.' });
+  sendJson(res, 200, { status: pending.status, orderId: pending.orderId });
 });
 
 router.get('/api/orders/mine', async (req, res) => {
@@ -876,6 +949,54 @@ router.add('DELETE', '/api/admin/gift-codes/:id', async (req, res, params) => {
   if (!(await isAdmin(req))) return sendJson(res, 401, { error: 'Admin login required.' });
   const removed = await db.deleteAvailableGiftCode(Number(params.id));
   if (!removed) return sendJson(res, 404, { error: 'Code not found or already sold.' });
+  sendJson(res, 200, { ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Direct UPI Intent orders awaiting manual confirmation (admin only) - see
+// /api/payments/upi-intent/create above for how these are created.
+// ---------------------------------------------------------------------------
+router.get('/api/admin/upi-pending', async (req, res) => {
+  if (!(await isAdmin(req))) return sendJson(res, 401, { error: 'Admin login required.' });
+  const parsed = url.parse(req.url, true);
+  const status = String(parsed.query.status || 'pending');
+  const pending = await db.listPendingUpiOrders(status === 'all' ? null : status);
+  sendJson(res, 200, { pending });
+});
+
+router.post('/api/admin/upi-pending/:id/approve', async (req, res, params) => {
+  if (!(await isAdmin(req))) return sendJson(res, 401, { error: 'Admin login required.' });
+  const pending = await db.getPendingUpiOrder(params.id);
+  if (!pending || pending.status !== 'pending') {
+    return sendJson(res, 404, { error: 'Not found, or already approved/rejected.' });
+  }
+  const buyer = await db.getUserByEmail(pending.userEmail);
+  if (!buyer) return sendJson(res, 404, { error: 'Buyer account no longer exists.' });
+
+  const orderId = newOrderId('GM');
+  const order = await db.withTransaction(async conn => {
+    const items = await claimCartItems(conn, pending.items, orderId);
+    const orderObj = {
+      orderId, orderDate: formatOrderDate(), createdAt: Date.now(),
+      address: 'Digital delivery',
+      items, subtotal: pending.subtotal, tax: pending.platformFee, delivery: 0, grandTotal: pending.grandTotal,
+      status: 'Delivered', offline: false, source: 'upi-intent-manual',
+      userEmail: buyer.email, customerName: buyer.name, customerEmail: buyer.email
+    };
+    await db.createOrder(orderObj, conn);
+    const resolved = await db.resolvePendingUpiOrder(pending.id, 'approved', orderId, null, conn);
+    if (!resolved) throw new Error('This payment was already resolved.');
+    return orderObj;
+  });
+  sendJson(res, 200, order);
+});
+
+router.post('/api/admin/upi-pending/:id/reject', async (req, res, params) => {
+  if (!(await isAdmin(req))) return sendJson(res, 401, { error: 'Admin login required.' });
+  const body = await readJsonBody(req);
+  const note = String(body.note || '').trim() || null;
+  const resolved = await db.resolvePendingUpiOrder(params.id, 'rejected', null, note);
+  if (!resolved) return sendJson(res, 404, { error: 'Not found, or already approved/rejected.' });
   sendJson(res, 200, { ok: true });
 });
 
