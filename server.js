@@ -1164,7 +1164,8 @@ router.post('/api/partner/bonus-code', async (req, res) => {
 
   if (!partnerOrderRef) return sendJson(res, 400, { error: 'partnerOrderRef is required.' });
   if (!customerName) return sendJson(res, 400, { error: 'customerName is required.' });
-  if (!customerPhone || customerPhone.length < 10) return sendJson(res, 400, { error: 'A valid customerPhone is required.' });
+  if (customerPhone && customerPhone.length < 10) return sendJson(res, 400, { error: 'customerPhone must be a valid phone number.' });
+  if (!customerPhone && !customerEmail) return sendJson(res, 400, { error: 'At least one of customerPhone or customerEmail is required.' });
   if (!orderValue || orderValue <= 0) return sendJson(res, 400, { error: 'A valid orderValue is required.' });
 
   // Safe to retry: a duplicate call for an order we've already processed
