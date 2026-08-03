@@ -26,6 +26,9 @@ const PLATFORM_FEE_RATE = 0.05;
 // bypasses Razorpay entirely, so there's no automatic payment-success
 // webhook; an admin manually confirms these (see /api/admin/upi-pending).
 const GIFTMINT_UPI_VPA = process.env.GIFTMINT_UPI_VPA || '';
+// Shared secret a partner business (e.g. Leela Mart) sends in the
+// X-Partner-Key header when calling /api/partner/bonus-code.
+const PARTNER_API_KEY = process.env.PARTNER_API_KEY || '';
 
 const router = new Router();
 
@@ -744,7 +747,9 @@ const ORDER_SOURCE_LABELS = {
   'razorpay-checkout': 'Razorpay Checkout',
   'razorpay-webhook': 'UPI Payment',
   'sms-paste': 'Bank SMS (Manual Entry)',
-  'manual': 'Manual Entry'
+  'manual': 'Manual Entry',
+  'upi-intent-manual': 'Direct UPI (Manually Confirmed)',
+  'partner-bonus': 'Partner Bonus'
 };
 
 // Renders a standalone, print-ready Tax Invoice page for one order. Works
@@ -824,6 +829,7 @@ function renderInvoiceHtml(o) {
         <div class="box"><h4>Delivery</h4><p>Digital &mdash; code(s) below</p></div>
         <div class="box"><h4>Source</h4><p>${esc(o.offline ? 'Offline' : 'Online')}${o.source ? ' &middot; ' + esc(ORDER_SOURCE_LABELS[o.source] || o.source) : ''}</p></div>
         ${o.contact ? `<div class="box"><h4>Contact</h4><p>${esc(maskPhone(o.contact))}</p></div>` : ''}
+        ${o.partnerName ? `<div class="box"><h4>Partner</h4><p>${esc(o.partnerName)}<br><small>Ref: ${esc(o.partnerOrderRef)}</small></p></div>` : ''}
       </div>
       <table><thead><tr><th>Gift Card</th><th>Value</th><th>Code</th></tr></thead><tbody>${rows}</tbody></table>
       <div class="totals">
@@ -1115,6 +1121,122 @@ router.post('/api/webhook/razorpay-payment', async (req, res) => {
   sendJson(res, 200, {
     ok: true, amount: details.amount, name: user.name, email: user.email,
     orderId: order.orderId, items: order.items.map(i => `${i.platformName} ₹${i.denomination}`)
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Partner bonus codes - a partner business (e.g. Leela Mart) calls this
+// after ITS OWN customer completes an order on ITS OWN site, to hand that
+// customer a real, redeemable GiftMint code as a reward. The invoice is
+// recorded at the partner's order value (for reconciliation - "how much
+// business this partner sent us"), even though the code itself is only
+// worth whatever the tier below assigns - the two numbers are deliberately
+// different and both shown on the order.
+// ---------------------------------------------------------------------------
+// Leela Mart order value -> bonus code value. Fixed for now; only orders in
+// the Rs.100-3000 range are supported.
+const PARTNER_BONUS_TIERS = [
+  { max: 500, denomination: 100 },
+  { max: 1500, denomination: 200 },
+  { max: 3000, denomination: 500 }
+];
+function partnerBonusDenomination(orderValue) {
+  for (const tier of PARTNER_BONUS_TIERS) {
+    if (orderValue <= tier.max) return tier.denomination;
+  }
+  return null;
+}
+
+router.post('/api/partner/bonus-code', async (req, res) => {
+  if (!PARTNER_API_KEY) {
+    return sendJson(res, 500, { error: 'Partner API is not configured on this server (missing PARTNER_API_KEY).' });
+  }
+  if (req.headers['x-partner-key'] !== PARTNER_API_KEY) {
+    return sendJson(res, 401, { error: 'Invalid partner key.' });
+  }
+
+  const body = await readJsonBody(req);
+  const partnerOrderRef = String(body.partnerOrderRef || '').trim();
+  const customerName = String(body.customerName || '').trim();
+  const customerPhone = String(body.customerPhone || '').replace(/\D/g, '');
+  const customerEmail = body.customerEmail ? String(body.customerEmail).trim().toLowerCase() : '';
+  const orderValue = Number(body.orderValue);
+
+  if (!partnerOrderRef) return sendJson(res, 400, { error: 'partnerOrderRef is required.' });
+  if (!customerName) return sendJson(res, 400, { error: 'customerName is required.' });
+  if (!customerPhone || customerPhone.length < 10) return sendJson(res, 400, { error: 'A valid customerPhone is required.' });
+  if (!orderValue || orderValue <= 0) return sendJson(res, 400, { error: 'A valid orderValue is required.' });
+
+  // Safe to retry: a duplicate call for an order we've already processed
+  // returns the same code instead of minting a second one.
+  const existing = await db.getOrderByPartnerRef(partnerOrderRef);
+  if (existing) {
+    const item = existing.items[0];
+    return sendJson(res, 200, {
+      ok: true, orderId: existing.orderId, denomination: item.denomination,
+      platform: item.platform, platformName: item.platformName, code: item.code
+    });
+  }
+
+  const denomination = partnerBonusDenomination(orderValue);
+  if (!denomination) {
+    return sendJson(res, 400, { error: `orderValue ${orderValue} is outside the supported bonus range (Rs. 100-3000 for now).` });
+  }
+
+  // Real, redeemable code only - random among whichever platforms actually
+  // have stock at this denomination. Never a synthetic fallback: this is a
+  // genuine reward going to a real Leela Mart customer.
+  const stock = await db.getRealStock();
+  const eligiblePlatforms = PLATFORMS.filter(p => stock.some(s => s.platform === p.id && s.denomination === denomination && s.available > 0));
+  if (eligiblePlatforms.length === 0) {
+    return sendJson(res, 409, { error: `No real stock available for a Rs. ${denomination} bonus code right now.` });
+  }
+  const platform = eligiblePlatforms[Math.floor(Math.random() * eligiblePlatforms.length)];
+
+  // Real GiftMint account for this customer, keyed by their real email if
+  // Leela Mart has one, otherwise a stable per-phone placeholder - so a
+  // repeat customer's later bonuses land on the same account either way.
+  const email = customerEmail || `${customerPhone}@partner.giftmint.local`;
+  let user = await db.getUserByEmail(email);
+  if (!user) {
+    const { salt, hash } = auth.hashPassword(auth.newToken());
+    try {
+      await db.createUser({ email, name: customerName, passwordSalt: salt, passwordHash: hash, auto: true });
+      user = { email, name: customerName };
+    } catch (e) {
+      if (e.code !== 'ER_DUP_ENTRY') throw e;
+      user = await db.getUserByEmail(email);
+    }
+  }
+
+  const orderId = newOrderId('GM-PB');
+  const order = await db.withTransaction(async conn => {
+    const codes = await db.claimRealCodes(conn, { platform: platform.id, denomination, qty: 1, orderId });
+    if (codes.length === 0) throw new Error('OUT_OF_STOCK'); // lost a race for the last unit between the check above and this claim
+    const orderObj = {
+      orderId, orderDate: formatOrderDate(), createdAt: Date.now(),
+      address: 'Digital delivery',
+      items: [{ platform: platform.id, platformName: platform.name, denomination, code: codes[0] }],
+      // Invoice amount is the partner's order value, not the code's value -
+      // this is a reconciliation record of business the partner sent us,
+      // deliberately different from what the code itself is worth.
+      subtotal: orderValue, tax: 0, delivery: 0, grandTotal: orderValue,
+      status: 'Delivered', offline: false, source: 'partner-bonus',
+      partnerName: 'Leela Mart', partnerOrderRef,
+      userEmail: user.email, customerName: user.name, customerEmail: user.email, contact: customerPhone
+    };
+    await db.createOrder(orderObj, conn);
+    return orderObj;
+  }).catch(e => {
+    if (e.message === 'OUT_OF_STOCK') return null;
+    throw e;
+  });
+
+  if (!order) return sendJson(res, 409, { error: `No real stock available for a Rs. ${denomination} bonus code right now.` });
+
+  sendJson(res, 200, {
+    ok: true, orderId: order.orderId, denomination,
+    platform: platform.id, platformName: platform.name, code: order.items[0].code
   });
 });
 
