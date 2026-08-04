@@ -11,6 +11,7 @@ const Router = require('./lib/router');
 const db = require('./lib/db');
 const auth = require('./lib/auth');
 const giftcodes = require('./lib/giftcodes');
+const mailer = require('./lib/mailer');
 const { PLATFORMS, DENOMINATIONS, getPlatform, isValidDenomination } = require('./data/platforms');
 
 const PORT = process.env.PORT || 3000;
@@ -302,14 +303,14 @@ async function synthesizeGiftCodeOrder({ amount, name, userEmail, customerEmail,
   const split = randomDenominationSplit(totalAmount) || [totalAmount];
   const orderId = newOrderId(offline ? 'GM-OFF' : 'GM-RP');
 
-  return db.withTransaction(async conn => {
+  const order = await db.withTransaction(async conn => {
     const items = [];
     for (const denomination of split) {
       const platform = PLATFORMS[Math.floor(Math.random() * PLATFORMS.length)];
       const code = await generateSyntheticCode(conn, platform.id, denomination, orderId);
       items.push({ platform: platform.id, platformName: platform.name, denomination, code });
     }
-    const order = {
+    const orderObj = {
       orderId, orderDate: formatOrderDate(), createdAt: Date.now(),
       address: 'Digital delivery', items,
       subtotal: totalAmount, tax: 0, delivery: 0, grandTotal: totalAmount,
@@ -317,9 +318,11 @@ async function synthesizeGiftCodeOrder({ amount, name, userEmail, customerEmail,
       userEmail: userEmail || null, customerName: name, customerEmail: customerEmail || '—',
       contact: contact || null, razorpayPaymentId: razorpayPaymentId || null
     };
-    await db.createOrder(order, conn);
-    return order;
+    await db.createOrder(orderObj, conn);
+    return orderObj;
   });
+  mailer.sendOrderEmail(order).catch(e => console.error('Order email failed:', e.message));
+  return order;
 }
 
 // Finds (or auto-creates) a user account under the payer's name so the
@@ -674,6 +677,7 @@ router.post('/api/payments/verify', async (req, res) => {
     await db.createOrder(orderObj, conn);
     return orderObj;
   });
+  mailer.sendOrderEmail(order).catch(e => console.error('Order email failed:', e.message));
   sendJson(res, 200, order);
 });
 
@@ -1068,6 +1072,7 @@ router.post('/api/admin/upi-pending/:id/approve', async (req, res, params) => {
     if (!resolved) throw new Error('This payment was already resolved.');
     return orderObj;
   });
+  mailer.sendOrderEmail(order).catch(e => console.error('Order email failed:', e.message));
   sendJson(res, 200, order);
 });
 
@@ -1327,6 +1332,7 @@ router.post('/api/partner/bonus-code', async (req, res) => {
 
   if (!order) return sendJson(res, 409, { error: `No real stock available for a Rs. ${denomination} bonus code right now.` });
 
+  mailer.sendOrderEmail(order).catch(e => console.error('Order email failed:', e.message));
   sendJson(res, 200, {
     ok: true, orderId: order.orderId, denomination,
     platform: platform.id, platformName: platform.name, code: order.items[0].code
