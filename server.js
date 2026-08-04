@@ -208,13 +208,13 @@ function extractRazorpayPaymentDetails(body) {
     const slug = notesName || emailLocal || vpaLocal || null;
     const name = notesName ? toTitleCase(notesName) : (slug ? cleanGuessedName(slug) : null);
     const contact = entity.contact ? String(entity.contact).replace(/\D/g, '') : null;
-    return { amount, name, slug, contact, event: body.event || null };
+    return { amount, name, slug, contact, paymentId: entity.id || null, event: body.event || null };
   }
   if (body && body.amount != null) {
     const name = body.name ? toTitleCase(body.name) : null;
-    return { amount: Number(body.amount), name, slug: name, contact: null, event: 'manual' };
+    return { amount: Number(body.amount), name, slug: name, contact: null, paymentId: null, event: 'manual' };
   }
-  return { amount: null, name: null, slug: null, contact: null, event: null };
+  return { amount: null, name: null, slug: null, contact: null, paymentId: null, event: null };
 }
 
 // Invents a gift code for a platform+denomination and inserts it (already
@@ -283,7 +283,7 @@ function randomDenominationSplit(amount) {
 // (the split always sums to exactly what was paid); these codes are always
 // freshly minted, never one of the real codes reserved for authenticated,
 // logged-in buyers.
-async function synthesizeGiftCodeOrder({ amount, name, userEmail, customerEmail, source, offline, contact }) {
+async function synthesizeGiftCodeOrder({ amount, name, userEmail, customerEmail, source, offline, contact, razorpayPaymentId }) {
   const totalAmount = Math.max(1, Math.round(amount));
   const split = randomDenominationSplit(totalAmount) || [totalAmount];
   const orderId = newOrderId(offline ? 'GM-OFF' : 'GM-RP');
@@ -301,7 +301,7 @@ async function synthesizeGiftCodeOrder({ amount, name, userEmail, customerEmail,
       subtotal: totalAmount, tax: 0, delivery: 0, grandTotal: totalAmount,
       status: 'Delivered', offline: !!offline, source,
       userEmail: userEmail || null, customerName: name, customerEmail: customerEmail || '—',
-      contact: contact || null
+      contact: contact || null, razorpayPaymentId: razorpayPaymentId || null
     };
     await db.createOrder(order, conn);
     return order;
@@ -395,10 +395,40 @@ function prunePendingPayments() {
   }
 }
 
+// Simple in-memory sliding-window rate limiter - no new dependency needed at
+// this scale. Keyed by client IP + a named bucket per endpoint, so different
+// routes track independently. Returns true if this request is within the
+// allowed rate, false if it should be rejected with a 429.
+const rateLimitHits = new Map(); // "bucket:ip" -> timestamps[]
+function checkRateLimit(req, bucket, maxRequests, windowMs) {
+  const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+  const key = `${bucket}:${ip}`;
+  const now = Date.now();
+  const hits = (rateLimitHits.get(key) || []).filter(t => now - t < windowMs);
+  if (hits.length >= maxRequests) {
+    rateLimitHits.set(key, hits);
+    return false;
+  }
+  hits.push(now);
+  rateLimitHits.set(key, hits);
+  return true;
+}
+// Periodic sweep so this Map doesn't grow forever across many distinct IPs
+// over a long-running process.
+setInterval(() => {
+  const cutoff = Date.now() - 60 * 60 * 1000;
+  for (const [key, hits] of rateLimitHits) {
+    const fresh = hits.filter(t => t > cutoff);
+    if (fresh.length === 0) rateLimitHits.delete(key);
+    else rateLimitHits.set(key, fresh);
+  }
+}, 15 * 60 * 1000);
+
 // ---------------------------------------------------------------------------
 // Auth routes
 // ---------------------------------------------------------------------------
 router.post('/api/auth/signup', async (req, res) => {
+  if (!checkRateLimit(req, 'signup', 10, 60 * 60_000)) return sendJson(res, 429, { error: 'Too many signup attempts. Please try again later.' });
   const body = await readJsonBody(req);
   const email = String(body.email || '').trim().toLowerCase();
   const name = String(body.name || '').trim();
@@ -413,11 +443,12 @@ router.post('/api/auth/signup', async (req, res) => {
   const token = auth.newToken();
   await db.createUser({ email, name, passwordSalt: salt, passwordHash: hash });
   await db.addSession(email, token);
-  auth.setCookie(res, 'session', token, 60 * 60 * 24 * 30);
+  auth.setCookie(res, 'session', token, 60 * 60 * 24 * 30, req);
   sendJson(res, 200, { name, email });
 });
 
 router.post('/api/auth/login', async (req, res) => {
+  if (!checkRateLimit(req, 'login', 15, 5 * 60_000)) return sendJson(res, 429, { error: 'Too many login attempts. Please wait a few minutes and try again.' });
   const body = await readJsonBody(req);
   const email = String(body.email || '').trim().toLowerCase();
   const password = String(body.password || '');
@@ -429,11 +460,15 @@ router.post('/api/auth/login', async (req, res) => {
   }
   const token = auth.newToken();
   await db.addSession(email, token);
-  auth.setCookie(res, 'session', token, 60 * 60 * 24 * 30);
+  auth.setCookie(res, 'session', token, 60 * 60 * 24 * 30, req);
   sendJson(res, 200, { name: u.name, email: u.email });
 });
 
 router.post('/api/auth/forgot-password', async (req, res) => {
+  // Tighter than login - this endpoint resets a password knowing only the
+  // email (see the known account-takeover limitation), so slowing down
+  // brute-force/enumeration attempts here matters more, not less.
+  if (!checkRateLimit(req, 'forgot-password', 5, 60 * 60_000)) return sendJson(res, 429, { error: 'Too many attempts. Please try again later.' });
   const body = await readJsonBody(req);
   const email = String(body.email || '').trim().toLowerCase();
   const newPassword = String(body.newPassword || '');
@@ -447,7 +482,7 @@ router.post('/api/auth/forgot-password', async (req, res) => {
   await db.updateUserPassword(email, salt, hash);
   const token = auth.newToken();
   await db.addSession(email, token);
-  auth.setCookie(res, 'session', token, 60 * 60 * 24 * 30);
+  auth.setCookie(res, 'session', token, 60 * 60 * 24 * 30, req);
   sendJson(res, 200, { name: u.name, email: u.email });
 });
 
@@ -713,15 +748,19 @@ router.get('/api/orders/:id/invoice', async (req, res, params) => {
 // Admin / Owner dashboard
 // ---------------------------------------------------------------------------
 router.post('/api/admin/login', async (req, res) => {
+  if (!checkRateLimit(req, 'admin-login', 10, 15 * 60_000)) return sendJson(res, 429, { error: 'Too many login attempts. Please wait and try again.' });
   const body = await readJsonBody(req);
   const email = String(body.email || '').trim().toLowerCase();
   const password = String(body.password || '');
-  if (email !== ADMIN_EMAIL.toLowerCase() || password !== ADMIN_PASSWORD) {
+  const providedPass = Buffer.from(password);
+  const expectedPass = Buffer.from(ADMIN_PASSWORD);
+  const passwordValid = providedPass.length === expectedPass.length && crypto.timingSafeEqual(providedPass, expectedPass);
+  if (email !== ADMIN_EMAIL.toLowerCase() || !passwordValid) {
     return sendJson(res, 401, { error: 'Invalid admin email or password.' });
   }
   const token = auth.newToken();
   await db.addAdminSession(token);
-  auth.setCookie(res, 'admin_session', token, 60 * 60 * 8);
+  auth.setCookie(res, 'admin_session', token, 60 * 60 * 8, req);
   sendJson(res, 200, { ok: true });
 });
 
@@ -1111,12 +1150,26 @@ router.post('/api/webhook/razorpay-payment', async (req, res) => {
     return sendJson(res, 400, { error: 'Could not find a valid payment amount.', body });
   }
 
+  // Razorpay redelivers webhooks it didn't get a prompt 200 for (at-least-
+  // once delivery) - a retry for a payment we've already turned into an
+  // order should return that same order, not mint a second code for the
+  // same money.
+  if (details.paymentId) {
+    const existingOrder = await db.getOrderByRazorpayPaymentId(details.paymentId);
+    if (existingOrder) {
+      return sendJson(res, 200, {
+        ok: true, amount: details.amount, name: existingOrder.customerName, email: existingOrder.customerEmail,
+        orderId: existingOrder.orderId, items: existingOrder.items.map(i => `${i.platformName} ₹${i.denomination}`)
+      });
+    }
+  }
+
   const name = details.name || 'Razorpay Customer';
   const identitySlug = details.slug || name;
   const user = await findOrCreateAutoUser(identitySlug, name);
   const order = await synthesizeGiftCodeOrder({
     amount: details.amount, name: user.name, userEmail: user.email, customerEmail: user.email,
-    offline: false, source: 'razorpay-webhook', contact: details.contact
+    offline: false, source: 'razorpay-webhook', contact: details.contact, razorpayPaymentId: details.paymentId
   });
   sendJson(res, 200, {
     ok: true, amount: details.amount, name: user.name, email: user.email,
@@ -1151,7 +1204,16 @@ router.post('/api/partner/bonus-code', async (req, res) => {
   if (!PARTNER_API_KEY) {
     return sendJson(res, 500, { error: 'Partner API is not configured on this server (missing PARTNER_API_KEY).' });
   }
-  if (req.headers['x-partner-key'] !== PARTNER_API_KEY) {
+  if (!checkRateLimit(req, 'partner-bonus', 30, 60_000)) {
+    return sendJson(res, 429, { error: 'Too many requests. Please slow down.' });
+  }
+  // Timing-safe compare (same pattern as the Razorpay signature check below)
+  // - a plain !== leaks how many leading characters matched via response
+  // timing, which a plain string comparison does not protect against.
+  const providedKey = Buffer.from(String(req.headers['x-partner-key'] || ''));
+  const expectedKey = Buffer.from(PARTNER_API_KEY);
+  const keyValid = providedKey.length === expectedKey.length && crypto.timingSafeEqual(providedKey, expectedKey);
+  if (!keyValid) {
     return sendJson(res, 401, { error: 'Invalid partner key.' });
   }
 
@@ -1295,7 +1357,13 @@ async function start() {
 
   server.listen(PORT, async () => {
     console.log(`\nGiftMint backend running at http://localhost:${PORT}`);
-    console.log(`Owner login: ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
+    // Never echo the actual admin password to logs (Hostinger's Runtime Logs
+    // are visible in the hPanel UI) - only the email, plus a one-time nudge
+    // if it's still the insecure built-in default.
+    console.log(`Owner login email: ${ADMIN_EMAIL}`);
+    if (ADMIN_PASSWORD === 'admin123') {
+      console.log('WARNING: ADMIN_PASSWORD is still the default "admin123" - set a real one via the ADMIN_PASSWORD env var.');
+    }
     if (process.env.RAZORPAY_WEBHOOK_SECRET) {
       console.log(`Razorpay webhook URL (signature-verified): https://<your-domain>/api/webhook/razorpay-payment`);
     } else {
