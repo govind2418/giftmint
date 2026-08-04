@@ -761,7 +761,7 @@ router.get('/api/orders/:id/invoice', async (req, res, params) => {
   const order = await db.getOrderById(params.id);
   if (!order || order.customerEmail !== u.email) { res.writeHead(404); return res.end('Order not found.'); }
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end(renderInvoiceHtml(order));
+  res.end(await renderInvoiceHtml(order));
 });
 
 // ---------------------------------------------------------------------------
@@ -816,9 +816,19 @@ const ORDER_SOURCE_LABELS = {
 // from the admin's own view rather than a customer session - the
 // auto/synthetic accounts webhooks create have no real login, so this is
 // the only way to ever see their invoice.
-function renderInvoiceHtml(o) {
+async function renderInvoiceHtml(o) {
   const esc = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const rows = o.items.map(i => `<tr><td>${esc(i.platformName)} Gift Card</td><td>Rs. ${i.denomination.toLocaleString('en-IN')}</td><td class="code">${esc(i.code)}</td></tr>`).join('');
+  // `contact` on the order is only ever set for webhook/offline payments
+  // (pulled straight off the payment payload). For a normal logged-in
+  // storefront order there's no such field, but the customer does have a
+  // real phone on their account (from Firebase phone login) - show that
+  // instead so the invoice always has a contact number when one exists.
+  let contact = o.contact;
+  if (!contact && o.customerEmail) {
+    const account = await db.getUserByEmail(o.customerEmail);
+    if (account && account.phone) contact = account.phone;
+  }
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Invoice ${esc(o.orderId)} - GiftMint</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
@@ -887,7 +897,7 @@ function renderInvoiceHtml(o) {
         <div class="box"><h4>Billed To</h4><p>${esc(o.customerName)}<br>${esc(o.customerEmail)}</p></div>
         <div class="box"><h4>Delivery</h4><p>Digital &mdash; code(s) below</p></div>
         <div class="box"><h4>Source</h4><p>${esc(o.offline ? 'Offline' : 'Online')}${o.source ? ' &middot; ' + esc(ORDER_SOURCE_LABELS[o.source] || o.source) : ''}</p></div>
-        ${o.contact ? `<div class="box"><h4>Contact</h4><p>${esc(maskPhone(o.contact))}</p></div>` : ''}
+        ${contact ? `<div class="box"><h4>Contact</h4><p>${esc(maskPhone(contact))}</p></div>` : ''}
         ${o.partnerName ? `<div class="box"><h4>Partner</h4><p>${esc(o.partnerName)}<br><small>Ref: ${esc(o.partnerOrderRef)}</small></p></div>` : ''}
       </div>
       <table><thead><tr><th>Gift Card</th><th>Value</th><th>Code</th></tr></thead><tbody>${rows}</tbody></table>
@@ -907,7 +917,7 @@ router.get('/api/admin/invoice/:orderId', async (req, res, params) => {
   const order = await db.getOrderById(params.orderId);
   if (!order) { res.writeHead(404); return res.end('Order not found.'); }
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end(renderInvoiceHtml(order));
+  res.end(await renderInvoiceHtml(order));
 });
 
 const ADMIN_PAGE_SIZE = 20;
