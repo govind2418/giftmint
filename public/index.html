@@ -229,6 +229,8 @@
   @media (max-width:560px){ .auth-side{display:none;} .auth-modal{max-width:400px;} }
 </style>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 </head>
 <body>
 
@@ -331,6 +333,7 @@
 
 <div class="invoice-overlay" id="authOverlay">
   <div class="auth-modal" id="authBox"></div>
+  <div id="authRecaptchaContainer"></div>
 </div>
 
 <div class="invoice-overlay" id="historyOverlay">
@@ -530,15 +533,37 @@ function requireLogin(action){
   toggleCart(false);
   openAuth();
 }
-// ---------- Auth (phone + OTP - no passwords) ----------
+// ---------- Auth (phone + OTP via Firebase - no passwords) ----------
+// OTP sending/verification happens entirely through Firebase's own
+// infrastructure (not ours) - our server only ever sees the resulting
+// Firebase ID token, which it verifies server-side before creating a
+// session. This is what lets us do phone-number login without needing our
+// own SMS provider or DLT registration.
+firebase.initializeApp({
+  apiKey: "AIzaSyAL09JmNe3kNWhDx7d0KbLvW1yDkw6n1C8",
+  authDomain: "giftmint.firebaseapp.com",
+  projectId: "giftmint",
+  storageBucket: "giftmint.firebasestorage.app",
+  messagingSenderId: "843856275946",
+  appId: "1:843856275946:web:659441c6f0887b742baa93"
+});
 let authPhone = '';
 let authIsNewUser = false;
 let authResendTimer = null;
 let authResendSecondsLeft = 0;
+let authConfirmationResult = null;
+let authRecaptchaVerifier = null;
+
+function getAuthRecaptchaVerifier(){
+  if(authRecaptchaVerifier) return authRecaptchaVerifier;
+  authRecaptchaVerifier = new firebase.auth.RecaptchaVerifier('authRecaptchaContainer', { size: 'invisible' });
+  return authRecaptchaVerifier;
+}
 
 function openAuth(){
   authPhone = '';
   authIsNewUser = false;
+  authConfirmationResult = null;
   renderAuthStep1();
   document.getElementById('authOverlay').classList.add('open');
 }
@@ -546,6 +571,8 @@ function closeAuth(){
   document.getElementById('authOverlay').classList.remove('open');
   pendingAction = null;
   clearInterval(authResendTimer);
+  if(authRecaptchaVerifier){ authRecaptchaVerifier.clear(); authRecaptchaVerifier = null; }
+  authConfirmationResult = null;
 }
 // Small original illustration (phone + gift boxes) in GiftMint's own
 // colors for the auth panel - not a copy of any particular site's art.
@@ -609,14 +636,20 @@ async function sendAuthOtp(){
     errEl.style.display = 'block';
     return;
   }
+  const btn = document.querySelector('#authBox .checkout-btn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Sending...'; }
   try{
-    const result = await api('/api/auth/otp/send', { method:'POST', body: JSON.stringify({ phone }) });
+    const check = await api('/api/auth/phone/check', { method:'POST', body: JSON.stringify({ phone }) });
+    const confirmationResult = await firebase.auth().signInWithPhoneNumber('+91' + phone, getAuthRecaptchaVerifier());
     authPhone = phone;
-    authIsNewUser = result.isNewUser;
+    authIsNewUser = check.isNewUser;
+    authConfirmationResult = confirmationResult;
     renderAuthStep2();
   } catch(e){
+    if(authRecaptchaVerifier){ authRecaptchaVerifier.clear(); authRecaptchaVerifier = null; }
     errEl.textContent = e.message || 'Could not send OTP.';
     errEl.style.display = 'block';
+    if(btn){ btn.disabled = false; btn.textContent = 'Next'; }
   }
 }
 function renderAuthStep2(){
@@ -663,22 +696,29 @@ function startAuthResendTimer(){
   authResendTimer = setInterval(tick, 1000);
 }
 async function resendAuthOtp(){
-  try{ await api('/api/auth/otp/send', { method:'POST', body: JSON.stringify({ phone: authPhone }) }); startAuthResendTimer(); }
-  catch(e){ alert(e.message); }
+  try{
+    if(authRecaptchaVerifier){ authRecaptchaVerifier.clear(); authRecaptchaVerifier = null; }
+    authConfirmationResult = await firebase.auth().signInWithPhoneNumber('+91' + authPhone, getAuthRecaptchaVerifier());
+    startAuthResendTimer();
+  } catch(e){ alert(e.message); }
 }
 async function verifyAuthOtp(){
   const errEl = document.getElementById('authError');
   errEl.style.display = 'none';
   const otp = document.getElementById('authOtpInput').value.trim();
   if(!otp){ errEl.textContent = 'Please enter the OTP.'; errEl.style.display = 'block'; return; }
-  const body = { phone: authPhone, otp };
+  let name = '', email = '';
   if(authIsNewUser){
-    body.name = document.getElementById('authNameInput').value.trim();
-    body.email = document.getElementById('authEmailInput').value.trim();
-    if(!body.name){ errEl.textContent = 'Please enter your name.'; errEl.style.display = 'block'; return; }
+    name = document.getElementById('authNameInput').value.trim();
+    email = document.getElementById('authEmailInput').value.trim();
+    if(!name){ errEl.textContent = 'Please enter your name.'; errEl.style.display = 'block'; return; }
   }
+  const btn = document.querySelector('#authBox .checkout-btn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Verifying...'; }
   try{
-    const result = await api('/api/auth/otp/verify', { method:'POST', body: JSON.stringify(body) });
+    const userCredential = await authConfirmationResult.confirm(otp);
+    const idToken = await userCredential.user.getIdToken();
+    const result = await api('/api/auth/firebase-login', { method:'POST', body: JSON.stringify({ idToken, name, email }) });
     currentUser = { name: result.name, email: result.email, phone: result.phone };
     renderAuthArea();
     const action = pendingAction;
@@ -686,8 +726,9 @@ async function verifyAuthOtp(){
     closeAuth();
     if(action) action();
   } catch(e){
-    errEl.textContent = e.message || 'Something went wrong.';
+    errEl.textContent = e.code === 'auth/invalid-verification-code' ? 'Incorrect or expired OTP.' : (e.message || 'Something went wrong.');
     errEl.style.display = 'block';
+    if(btn){ btn.disabled = false; btn.textContent = 'Verify & Continue'; }
   }
 }
 async function logout(){

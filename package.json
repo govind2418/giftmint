@@ -10,6 +10,7 @@
     "node": ">=16"
   },
   "dependencies": {
+    "firebase-admin": "^12.7.0",
     "mysql2": "^3.23.2"
   }
 }

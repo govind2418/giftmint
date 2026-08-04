@@ -29,12 +29,15 @@ const GIFTMINT_UPI_VPA = process.env.GIFTMINT_UPI_VPA || '';
 // Shared secret a partner business (e.g. Leela Mart) sends in the
 // X-Partner-Key header when calling /api/partner/bonus-code.
 const PARTNER_API_KEY = process.env.PARTNER_API_KEY || '';
-// Msg91 OTP - the only customer auth method (no passwords). Without a real
-// key configured, OTP send/verify falls back to a fixed dev OTP (000000) so
-// the whole flow can be exercised locally before Msg91 is wired up.
-const MSG91_AUTH_KEY = process.env.MSG91_AUTH_KEY || '';
-const MSG91_TEMPLATE_ID = process.env.MSG91_TEMPLATE_ID || '';
-const MSG91_DEV_OTP = '000000';
+// Firebase Phone Auth - the only customer auth method (no passwords). OTP
+// sending/verification happens entirely client-side via the Firebase JS SDK;
+// the server only ever sees the resulting ID token, which it verifies with
+// the Admin SDK to learn the (Firebase-confirmed) phone number.
+const admin = require('firebase-admin');
+const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '';
+if (FIREBASE_SERVICE_ACCOUNT_JSON) {
+  admin.initializeApp({ credential: admin.credential.cert(JSON.parse(FIREBASE_SERVICE_ACCOUNT_JSON)) });
+}
 
 const router = new Router();
 
@@ -388,42 +391,17 @@ function razorpayApiRequest(method, pathname, bodyObj) {
   });
 }
 
-// Msg91's OTP widget/API v5 - sendOtp generates and SMSes the code, verifyOtp
-// checks it - both handled entirely on Msg91's side, so we never generate,
-// store, or expire OTPs ourselves.
-function msg91Request(pathname) {
-  return new Promise((resolve, reject) => {
-    const req = https.request({
-      hostname: 'control.msg91.com',
-      path: pathname,
-      method: 'POST',
-      headers: { authkey: MSG91_AUTH_KEY, 'Content-Type': 'application/json' }
-    }, res => {
-      let data = '';
-      res.on('data', c => { data += c; });
-      res.on('end', () => {
-        let parsed;
-        try { parsed = data ? JSON.parse(data) : {}; } catch (e) { parsed = { raw: data }; }
-        resolve({ status: res.statusCode, body: parsed });
-      });
-    });
-    req.on('error', reject);
-    req.end();
-  });
-}
-async function sendOtp(phone) {
-  if (!MSG91_AUTH_KEY) return; // dev mode - see MSG91_DEV_OTP
-  const path = `/api/v5/otp?template_id=${encodeURIComponent(MSG91_TEMPLATE_ID)}&mobile=91${phone}`;
-  const res = await msg91Request(path);
-  if (res.body && res.body.type === 'error') {
-    throw new Error(res.body.message || 'Failed to send OTP.');
+// Verifies the Firebase ID token the client got back after Firebase itself
+// confirmed the phone OTP, and returns the (Firebase-verified) phone number.
+// Returns null if the token is missing/invalid.
+async function verifyFirebaseIdToken(idToken) {
+  if (!FIREBASE_SERVICE_ACCOUNT_JSON) return null;
+  try {
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    return auth.normalizePhone(decoded.phone_number || '');
+  } catch (e) {
+    return null;
   }
-}
-async function verifyOtp(phone, otp) {
-  if (!MSG91_AUTH_KEY) return otp === MSG91_DEV_OTP; // dev mode fallback
-  const path = `/api/v5/otp/verify?otp=${encodeURIComponent(otp)}&mobile=91${phone}`;
-  const res = await msg91Request(path);
-  return !!(res.body && res.body.type === 'success');
 }
 
 // Razorpay order_id -> priced cart, kept in memory only until the payment is
@@ -472,39 +450,28 @@ setInterval(() => {
 // Auth routes
 // ---------------------------------------------------------------------------
 // Phone + OTP is the only customer auth method - no passwords. One combined
-// flow handles both login and signup: send an OTP to a phone number, then
-// verify it. If that phone already has an account, verifying logs them in;
-// if not, verifying (with name+email also supplied) creates the account.
-router.post('/api/auth/otp/send', async (req, res) => {
-  if (!checkRateLimit(req, 'otp-send', 5, 10 * 60_000)) return sendJson(res, 429, { error: 'Too many OTP requests. Please wait a few minutes and try again.' });
+// flow handles both login and signup: the client sends the OTP itself via
+// the Firebase SDK (Firebase's own infra, not ours) and gets back a Firebase
+// ID token, which it hands to us here. If that phone already has an
+// account, this logs them in; if not, (with name+email also supplied) it
+// creates the account.
+router.post('/api/auth/phone/check', async (req, res) => {
+  if (!checkRateLimit(req, 'phone-check', 10, 10 * 60_000)) return sendJson(res, 429, { error: 'Too many requests. Please wait a few minutes and try again.' });
   const body = await readJsonBody(req);
   const phone = auth.normalizePhone(body.phone);
   if (!auth.isValidPhone(phone)) return sendJson(res, 400, { error: 'Please enter a valid 10-digit mobile number.' });
-
-  try {
-    await sendOtp(phone);
-  } catch (e) {
-    return sendJson(res, 500, { error: e.message || 'Could not send OTP. Please try again.' });
-  }
   const existing = await db.getUserByPhone(phone);
-  sendJson(res, 200, { ok: true, isNewUser: !existing });
+  sendJson(res, 200, { isNewUser: !existing });
 });
 
-router.post('/api/auth/otp/verify', async (req, res) => {
-  if (!checkRateLimit(req, 'otp-verify', 10, 10 * 60_000)) return sendJson(res, 429, { error: 'Too many attempts. Please wait a few minutes and try again.' });
+router.post('/api/auth/firebase-login', async (req, res) => {
+  if (!checkRateLimit(req, 'firebase-login', 10, 10 * 60_000)) return sendJson(res, 429, { error: 'Too many attempts. Please wait a few minutes and try again.' });
   const body = await readJsonBody(req);
-  const phone = auth.normalizePhone(body.phone);
-  const otp = String(body.otp || '').trim();
-  if (!auth.isValidPhone(phone)) return sendJson(res, 400, { error: 'Please enter a valid 10-digit mobile number.' });
-  if (!otp) return sendJson(res, 400, { error: 'Please enter the OTP.' });
+  const idToken = String(body.idToken || '');
+  if (!idToken) return sendJson(res, 400, { error: 'Missing verification token.' });
 
-  let otpValid;
-  try {
-    otpValid = await verifyOtp(phone, otp);
-  } catch (e) {
-    return sendJson(res, 500, { error: e.message || 'Could not verify OTP. Please try again.' });
-  }
-  if (!otpValid) return sendJson(res, 400, { error: 'Incorrect or expired OTP.' });
+  const phone = await verifyFirebaseIdToken(idToken);
+  if (!phone || !auth.isValidPhone(phone)) return sendJson(res, 400, { error: 'Could not verify your phone number. Please try again.' });
 
   let u = await db.getUserByPhone(phone);
   if (!u) {
