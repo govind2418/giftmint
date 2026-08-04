@@ -226,7 +226,11 @@
   .auth-resend{font-size:12px;color:var(--muted);margin-bottom:16px;}
   .auth-resend a{color:var(--primary);font-weight:700;cursor:pointer;}
   .auth-back{font-size:12px;color:var(--muted);cursor:pointer;margin-top:14px;text-align:center;}
-  @media (max-width:560px){ .auth-side{display:none;} .auth-modal{max-width:400px;} }
+  @media (max-width:560px){
+    .auth-modal{max-width:400px;min-height:0;flex-direction:column;}
+    .auth-side{width:100%;padding:18px 20px;}
+    .auth-side-art{display:none;}
+  }
 
   /* Mobile tune-up: base styles above were desktop-first and just reflowed
      via flex-wrap on small screens, but sizes/spacing never adjusted, so
