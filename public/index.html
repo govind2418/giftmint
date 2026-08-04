@@ -622,6 +622,23 @@ function renderAuthStep1(){
     </div>`;
   setTimeout(() => { const el = document.getElementById('authPhoneInput'); if(el) el.focus(); }, 50);
 }
+// Firebase's raw SDK error messages ("Firebase: We have blocked all
+// requests from this device due to unusual activity...") are meant for
+// developers, not shoppers - map the codes we might realistically hit to
+// plain, non-technical copy.
+function friendlyAuthError(e){
+  const map = {
+    'auth/too-many-requests': 'Too many attempts from this device. Please wait a few minutes and try again.',
+    'auth/invalid-phone-number': 'Please enter a valid 10-digit mobile number.',
+    'auth/invalid-verification-code': 'Incorrect or expired OTP.',
+    'auth/code-expired': 'This OTP has expired. Please request a new one.',
+    'auth/network-request-failed': 'Network error. Please check your connection and try again.',
+    'auth/captcha-check-failed': 'Verification failed. Please refresh the page and try again.',
+    'auth/billing-not-enabled': 'OTP service is temporarily unavailable. Please try again later.',
+    'auth/quota-exceeded': 'OTP service is temporarily unavailable. Please try again later.'
+  };
+  return (e && e.code && map[e.code]) || 'Something went wrong. Please try again.';
+}
 async function sendAuthOtp(){
   const errEl = document.getElementById('authError');
   errEl.style.display = 'none';
@@ -647,7 +664,7 @@ async function sendAuthOtp(){
     renderAuthStep2();
   } catch(e){
     if(authRecaptchaVerifier){ authRecaptchaVerifier.clear(); authRecaptchaVerifier = null; }
-    errEl.textContent = e.message || 'Could not send OTP.';
+    errEl.textContent = e.code ? friendlyAuthError(e) : (e.message || 'Could not send OTP.');
     errEl.style.display = 'block';
     if(btn){ btn.disabled = false; btn.textContent = 'Next'; }
   }
@@ -700,7 +717,7 @@ async function resendAuthOtp(){
     if(authRecaptchaVerifier){ authRecaptchaVerifier.clear(); authRecaptchaVerifier = null; }
     authConfirmationResult = await firebase.auth().signInWithPhoneNumber('+91' + authPhone, getAuthRecaptchaVerifier());
     startAuthResendTimer();
-  } catch(e){ alert(e.message); }
+  } catch(e){ alert(e.code ? friendlyAuthError(e) : (e.message || 'Could not resend OTP.')); }
 }
 async function verifyAuthOtp(){
   const errEl = document.getElementById('authError');
@@ -726,7 +743,7 @@ async function verifyAuthOtp(){
     closeAuth();
     if(action) action();
   } catch(e){
-    errEl.textContent = e.code === 'auth/invalid-verification-code' ? 'Incorrect or expired OTP.' : (e.message || 'Something went wrong.');
+    errEl.textContent = e.code ? friendlyAuthError(e) : (e.message || 'Something went wrong.');
     errEl.style.display = 'block';
     if(btn){ btn.disabled = false; btn.textContent = 'Verify & Continue'; }
   }
