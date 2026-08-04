@@ -176,6 +176,32 @@
   .badge-synthetic{background:#fff3e0;color:#e65100;}
   .badge-available{background:#e8f5e9;color:var(--green);}
   .badge-redeemed{background:#f3e5f5;color:#6a1b9a;}
+
+  /* Ask Govind - FAQ chatbot */
+  .govind-fab{position:fixed;bottom:22px;right:22px;z-index:260;display:flex;align-items:center;gap:9px;background:linear-gradient(100deg,var(--primary),var(--primary-dark));color:#fff;border:none;padding:12px 20px 12px 12px;border-radius:999px;box-shadow:0 8px 24px rgba(79,70,229,.35);cursor:pointer;font-size:14px;font-weight:700;transition:transform .15s;}
+  .govind-fab:hover{transform:translateY(-2px);}
+  .govind-fab-avatar{width:30px;height:30px;border-radius:50%;background:var(--mint);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0;}
+  .govind-panel{position:fixed;bottom:22px;right:22px;width:370px;max-width:92vw;height:min(560px,80vh);background:#fff;border-radius:16px;box-shadow:0 16px 48px rgba(15,23,42,.28);z-index:261;display:none;flex-direction:column;overflow:hidden;border:1px solid var(--border);}
+  .govind-panel.open{display:flex;}
+  .govind-header{background:linear-gradient(100deg,var(--primary),var(--primary-dark));color:#fff;padding:14px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0;}
+  .govind-avatar{width:36px;height:36px;border-radius:50%;background:var(--mint);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex-shrink:0;}
+  .govind-header-text{flex:1;}
+  .govind-name{font-weight:800;font-size:14.5px;}
+  .govind-status{font-size:11px;color:#C7D2FE;display:flex;align-items:center;gap:5px;}
+  .govind-dot{width:7px;height:7px;border-radius:50%;background:#6EE7B7;display:inline-block;}
+  .govind-close{background:rgba(255,255,255,.15);border:none;color:#fff;width:26px;height:26px;border-radius:50%;cursor:pointer;font-size:13px;flex-shrink:0;}
+  .govind-messages{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--bg);}
+  .govind-msg{max-width:82%;padding:9px 12px;border-radius:12px;font-size:13px;line-height:1.5;}
+  .govind-msg.bot{align-self:flex-start;background:#fff;border:1px solid var(--border);border-bottom-left-radius:3px;}
+  .govind-msg.user{align-self:flex-end;background:var(--primary);color:#fff;border-bottom-right-radius:3px;}
+  .govind-quick{padding:0 14px 10px;display:flex;flex-wrap:wrap;gap:6px;flex-shrink:0;}
+  .govind-quick button{background:var(--primary-light);color:var(--primary-dark);border:1px solid #D8DEFF;border-radius:20px;padding:6px 12px;font-size:11.5px;font-weight:600;cursor:pointer;}
+  .govind-quick button:hover{background:#E0E5FF;}
+  .govind-input-row{display:flex;gap:8px;padding:12px;border-top:1px solid var(--border);flex-shrink:0;}
+  .govind-input-row input{flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:20px;font-size:13px;outline:none;}
+  .govind-input-row input:focus{border-color:var(--primary);}
+  .govind-input-row button{width:38px;height:38px;border-radius:50%;border:none;background:var(--mint);color:#fff;font-size:15px;cursor:pointer;flex-shrink:0;}
+  @media (max-width:480px){ .govind-fab-label{display:none;} .govind-fab{padding:12px;} }
 </style>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
@@ -304,6 +330,28 @@
 
 <div class="invoice-overlay" id="addCodeOverlay">
   <div class="invoice-box" id="addCodeBox" style="max-width:420px;"></div>
+</div>
+
+<!-- Ask Govind - FAQ chatbot -->
+<button class="govind-fab" id="govindFab" onclick="toggleGovindChat()">
+  <span class="govind-fab-avatar">G</span>
+  <span class="govind-fab-label">Ask Govind</span>
+</button>
+<div class="govind-panel" id="govindPanel">
+  <div class="govind-header">
+    <div class="govind-avatar">G</div>
+    <div class="govind-header-text">
+      <div class="govind-name">Govind</div>
+      <div class="govind-status"><span class="govind-dot"></span> FAQ Assistant</div>
+    </div>
+    <button class="govind-close" onclick="toggleGovindChat()">✕</button>
+  </div>
+  <div class="govind-messages" id="govindMessages"></div>
+  <div class="govind-quick" id="govindQuick"></div>
+  <div class="govind-input-row">
+    <input type="text" id="govindInput" placeholder="Ask me anything about GiftMint..." onkeydown="if(event.key==='Enter') sendGovindMessage()">
+    <button onclick="sendGovindMessage()" aria-label="Send">➤</button>
+  </div>
 </div>
 
 <script>
@@ -1379,6 +1427,168 @@ async function submitOfflineOrder(){
   } catch(e){
     errEl.textContent = e.message; errEl.style.display = "block";
   }
+}
+
+// ---------- Ask Govind (FAQ chatbot) ----------
+// Simple keyword-overlap matcher against a fixed FAQ bank - no external API,
+// just scores every FAQ's keyword list against the words in what the
+// customer typed and returns the best match above a small threshold.
+const GOVIND_FAQS = [
+  { q:"What is GiftMint?", k:["what","giftmint","about","site"], a:"GiftMint is a gift-card marketplace — pick a platform (Myntra, Flipkart, Zepto or Amazon) and a value, pay securely, and the code lands on your invoice instantly." },
+  { q:"How does GiftMint work?", k:["how","works","work","use","process","giftmint"], a:"Choose a platform and denomination, add it to your cart, pay via Razorpay or UPI, and your gift card code is delivered right away on your invoice." },
+  { q:"Which platforms are supported?", k:["platforms","which","brands","myntra","flipkart","zepto","amazon","support"], a:"We currently support Myntra, Flipkart, Zepto and Amazon gift cards." },
+  { q:"What denominations are available?", k:["denomination","denominations","value","values","amount","amounts","price"], a:"Gift cards are available in ₹100, ₹200, ₹500, ₹1000, ₹1500, ₹2000, ₹2500 and ₹3000, subject to stock." },
+  { q:"How do I buy a gift card?", k:["buy","purchase","order","how","gift","card"], a:"Pick a platform card, click an in-stock denomination to add it to your cart, then checkout via Razorpay or UPI Intent." },
+  { q:"Do I need an account to buy?", k:["account","signup","need","required","register"], a:"Yes, you need to be logged in to check out — this lets us tie your order and gift code to your account for order history and support." },
+  { q:"What email can I sign up with?", k:["email","gmail","signup","register","address","sign","up","why","only","restriction"], a:"Signup and login currently only accept @gmail.com addresses — this keeps account verification simple and consistent for this project." },
+  { q:"I forgot my password, what do I do?", k:["forgot","password","reset","recover","lost"], a:"Click Login → Forgot password?, enter your Gmail address, and set a new password." },
+  { q:"How do I login?", k:["login","log","in","signin","sign"], a:"Click Login in the top-right, enter your Gmail address and password. New here? Use Sign Up instead." },
+  { q:"What payment methods are accepted?", k:["payment","methods","options","accepted","razorpay"], a:"You can pay via Razorpay Checkout (cards, UPI, netbanking, wallets) or our direct UPI Intent option." },
+  { q:"What is the platform fee?", k:["fee","platform fee","charge","extra","5%","why"], a:"A 5% platform fee is added to your cart subtotal before checkout — you'll see it broken out clearly before you pay. It covers payment processing and running the marketplace, and it's always shown upfront, never hidden." },
+  { q:"Is UPI payment supported?", k:["upi","gpay","phonepe","paytm","support","supported","payment"], a:"Yes — Razorpay Checkout includes UPI, and we also offer a direct 'Pay via UPI Intent' option with Google Pay, PhonePe, Paytm and other UPI app buttons." },
+  { q:"What is Pay via UPI Intent?", k:["upi","intent","directly"], a:"It's an alternative to Razorpay where you pay our UPI ID directly via your UPI app. Since it doesn't go through a payment gateway, the order is manually confirmed by the owner, which can take a little while." },
+  { q:"Which UPI apps are supported?", k:["upi","apps","gpay","google","phonepe","paytm","which"], a:"Google Pay, PhonePe, Paytm, and any other UPI app via the 'Other UPI App' option or the QR code." },
+  { q:"Only WhatsApp opens when I click Pay, what do I do?", k:["whatsapp","only","opens","wrong","app"], a:"Use the specific app button (Google Pay / PhonePe / Paytm) shown on the payment screen instead of scanning — this lets you pick exactly which app opens." },
+  { q:"How long does UPI Intent confirmation take?", k:["upi","intent","time","long","confirm","wait","pending"], a:"Direct UPI Intent payments are manually confirmed by the owner, so it can take a little while. Razorpay Checkout is instant." },
+  { q:"Is Razorpay checkout safe?", k:["razorpay","safe","secure","trust"], a:"Yes, Razorpay is a well-established, RBI-regulated payment gateway used by many Indian businesses." },
+  { q:"How do I know my payment was successful?", k:["payment","successful","success","confirm","confirmation"], a:"You'll immediately see an invoice with your gift card code once payment is verified. For UPI Intent, you'll see a waiting screen until the owner confirms." },
+  { q:"Where do I find my gift card code?", k:["find","code","where","gift","card"], a:"Right after checkout, your code appears on the invoice popup — you can also find it anytime under My Orders." },
+  { q:"How do I view my order history?", k:["order","history","orders","my","past","previous"], a:"Click 'My Orders' in the top header (you must be logged in) to see every order you've placed." },
+  { q:"Can I download or print my invoice?", k:["download","print","invoice","pdf","save"], a:"Yes — open any order's invoice and click 'Print Invoice' / 'Download / Print as PDF'." },
+  { q:"How do I redeem my gift card code?", k:["redeem","use","apply","how"], a:"Copy the code from your invoice and enter it at checkout on the respective platform's (Myntra/Flipkart/Zepto/Amazon) own website or app." },
+  { q:"Is the gift code real?", k:["real","genuine","fake","authentic","valid","code"], a:"Codes bought through the storefront checkout are drawn from real, verified inventory. This is a demo project, so please see the footer disclaimer for full details." },
+  { q:"What if the platform I want is out of stock?", k:["out","of","stock","unavailable","sold"], a:"Out-of-stock denominations are shown greyed out and can't be added to cart. Check back later, or pick another denomination/platform." },
+  { q:"Can I get a refund?", k:["refund","money","back","return"], a:"Please contact support with your order ID to discuss a refund — see our Refund Policy link in the footer." },
+  { q:"Can I cancel an order?", k:["cancel","order","stop"], a:"Once a gift code is issued it can't be cancelled, since the code is delivered instantly. Contact support if something went wrong." },
+  { q:"My gift code isn't working, what do I do?", k:["not","working","doesnt","work","invalid","error","code"], a:"Double-check you copied the full code correctly. If it still doesn't work, contact support with your order ID." },
+  { q:"Is my payment information safe?", k:["payment","safe","secure","information","card","details"], a:"We never see or store your card/UPI details — all payments are processed directly by Razorpay or your UPI app." },
+  { q:"Is my personal data safe?", k:["data","privacy","safe","personal","information"], a:"Your account info is stored securely and only used to process your orders — see our Privacy Policy link in the footer." },
+  { q:"Do you store my card details?", k:["store","card","details","save","cvv"], a:"No, we never store card numbers, CVVs, or UPI PINs — that's all handled by Razorpay/your UPI app." },
+  { q:"Who can see my gift code?", k:["who","see","code","access","visible"], a:"Only you (in your account) and the site owner (for support purposes) can see your issued gift code." },
+  { q:"Can I buy multiple gift cards in one order?", k:["multiple","many","several","more","than","one","buy","gift","cards"], a:"Yes — add as many platform/denomination combinations as you like to your cart before checking out." },
+  { q:"Can I buy a gift card for someone else?", k:["someone","else","gift","friend","family","send"], a:"Yes, just share the code from your invoice with them after purchase — there's no separate 'send as gift' option yet." },
+  { q:"Do gift codes expire?", k:["expire","expiry","valid","until","date"], a:"Expiry depends on the issuing platform's (Myntra/Flipkart/Zepto/Amazon) own gift card terms, not GiftMint." },
+  { q:"What is the minimum amount I can buy?", k:["minimum","least","smallest","min","amount"], a:"The smallest denomination available is ₹100." },
+  { q:"What is the maximum amount I can buy?", k:["maximum","largest","biggest","max","amount"], a:"The largest single denomination is ₹3000, but you can add multiple cards to reach a higher total." },
+  { q:"How is my order total calculated?", k:["total","calculate","breakdown","subtotal","how"], a:"Total = sum of your selected gift card values + a 5% platform fee, shown clearly before you pay." },
+  { q:"What does Delivered status mean?", k:["delivered","status","mean","processing"], a:"Delivered means your gift code has been generated and is ready to use — digital delivery is instant." },
+  { q:"How do I contact support?", k:["contact","support","help","reach","email","phone"], a:"Reach us at support@giftmint.demo, listed in the footer." },
+  { q:"Is GiftMint a real company?", k:["real","company","legit","genuine","business"], a:"GiftMint is built as a demo/academic project — see the disclaimer at the bottom of the page for full details." },
+  { q:"What is the Owner/Admin Login for?", k:["owner","admin","login","dashboard"], a:"That's a separate login for the store owner to manage orders, inventory and customers — not for regular shoppers." },
+  { q:"Can I change my account email?", k:["change","email","update","account"], a:"Email can't be changed directly right now — you'd need to create a new account with the new Gmail address." },
+  { q:"How do I update my profile photo?", k:["profile","photo","picture","update","change","avatar"], a:"Click your name in the header → your profile opens → 'Change Photo'." },
+  { q:"Can I use the same account for multiple orders?", k:["same","account","multiple","orders","reuse"], a:"Yes, all your orders are tied to your one account and visible under My Orders." },
+  { q:"What happens after I complete payment?", k:["after","payment","complete","next","then"], a:"Your order is created instantly, a real gift code is assigned, and the invoice with your code pops up right away." },
+  { q:"Do you offer discounts or coupons?", k:["discount","coupon","offer","promo","code","sale"], a:"There's no coupon system right now — gift cards are sold at face value plus the platform fee." },
+  { q:"Is there a mobile app?", k:["mobile","app","android","ios","download"], a:"No separate app — the website works well on mobile browsers, including the UPI Intent payment buttons." },
+  { q:"What browsers are supported?", k:["browser","browsers","chrome","safari","firefox","support","supported"], a:"GiftMint works on all modern browsers — Chrome, Safari, Firefox, Edge." },
+  { q:"How do I clear my cart?", k:["clear","cart","empty","remove","all"], a:"Remove items one at a time using the 'Remove' link next to each cart item." },
+  { q:"How do I remove an item from my cart?", k:["remove","delete","item","cart"], a:"Open your cart and click 'Remove' under the item you want to take out." },
+  { q:"What currencies are supported?", k:["currency","currencies","rupees","dollar","inr"], a:"All prices are in Indian Rupees (₹/INR) only." },
+  { q:"Is there a loyalty or rewards program?", k:["loyalty","rewards","points","program"], a:"Not for regular shoppers currently — some partner businesses do offer GiftMint bonus codes to their own customers." },
+  { q:"My payment failed, what happened to my money?", k:["failed","payment","money","deducted","charged"], a:"If a payment fails, no order is created. If money was deducted, it's typically auto-refunded by your bank/UPI app within a few days — contact support if it doesn't reverse." },
+  { q:"How do I report an issue with my order?", k:["report","issue","problem","complaint","wrong"], a:"Contact support with your Order ID and a description of the issue, and we'll look into it." },
+  { q:"Can I trust this website?", k:["trust","safe","scam","legit","website"], a:"GiftMint uses industry-standard payment processing (Razorpay) and never stores your card details. It's built as a demo project — see the footer disclaimer." },
+  { q:"Who do I contact for business partnerships?", k:["partnership","partnerships","partner","business","integrate","collaborate"], a:"Reach out via support@giftmint.demo for partnership/integration enquiries." },
+  { q:"Can I change the quantity of an item in my cart?", k:["quantity","qty","change","increase","decrease","cart"], a:"Yes, use the +/− buttons next to each cart item to adjust quantity." },
+  { q:"Why does the 5% fee apply only sometimes?", k:["fee","sometimes","apply","when","5%"], a:"The 5% platform fee applies to storefront checkout purchases. It doesn't apply to bonus codes issued via partner programs." },
+  { q:"Can I get a GST or business invoice?", k:["gst","business","invoice","tax","bill"], a:"Every order gets a printable invoice from My Orders, but it doesn't currently include GST registration details for business billing." },
+  { q:"I selected the wrong platform or amount, what do I do?", k:["wrong","mistake","selected","selection","incorrect"], a:"Remove the item from your cart before paying and add the correct one. Once a code is issued after payment, it can't be swapped — contact support if that happens." }
+];
+function govindNormalize(text){
+  return String(text).toLowerCase().replace(/[^\w\s]/g,' ').split(/\s+/).filter(Boolean);
+}
+// Filler words that appear across many FAQs' keyword lists ("how do I get
+// a refund" vs "how do I buy a gift card" both contain "how"/"do"/"get") -
+// left in, they'd out-vote the one genuinely distinctive word ("refund").
+// Stripped from both sides before scoring so only meaningful words count.
+// Articles/pronouns/prepositions plus generic question words (what, is,
+// how, why...) - the latter tell you it's a question, not which FAQ it's
+// about, and with 60 FAQs several inevitably listed one as a literal
+// keyword, letting it win ties by array order alone. Real distinguishing
+// power should come from topic words (e.g. "refund", "platform", "upi").
+const GOVIND_STOPWORDS = new Set(["a","an","the","to","for","of","in","on","at","and","or","it","this","that","with","have","has","i","my","me","you","your","is","are","was","were","do","does","did","how","what","which","who","whom","when","where","why","can","could","should","would","will"]);
+function govindMeaningfulTokens(text){
+  return govindNormalize(text).filter(w => !GOVIND_STOPWORDS.has(w));
+}
+// Keyword entries may be multi-word (e.g. "platform fee") - split those into
+// individual tokens once up front, since matching itself compares
+// single-word tokens from what the user typed.
+for(const faq of GOVIND_FAQS){ faq._tokens = faq.k.flatMap(kw => govindMeaningfulTokens(kw)); }
+// Words shared across many FAQs (e.g. "gift", "card", "platform") are poor
+// signals on their own - "buy a gift card" and "gift card expiry" share two
+// of three words. Weight each token by how rare it is across the whole FAQ
+// bank (classic inverse-document-frequency idea) so a word unique to one or
+// two FAQs decides the match, not whichever FAQ happens to repeat the most
+// common words.
+const govindDocFreq = new Map();
+for(const faq of GOVIND_FAQS){
+  for(const tok of new Set(faq._tokens)) govindDocFreq.set(tok, (govindDocFreq.get(tok) || 0) + 1);
+}
+function govindTokenWeight(tok){ return 1 / (govindDocFreq.get(tok) || 1); }
+function govindFindAnswer(userText){
+  const words = govindMeaningfulTokens(userText);
+  let best = null, bestScore = 0;
+  for(const faq of GOVIND_FAQS){
+    let score = 0;
+    for(const tok of faq._tokens){ if(words.includes(tok)) score += govindTokenWeight(tok); }
+    if(score > bestScore){ bestScore = score; best = faq; }
+  }
+  return bestScore > 0.15 ? best.a : null; // below this, the match is too weak/coincidental to trust
+}
+const GOVIND_STARTER_QUESTIONS = [
+  "How do I buy a gift card?",
+  "What payment methods are accepted?",
+  "Where do I find my gift card code?",
+  "What is the platform fee?",
+  "I forgot my password"
+];
+let govindOpened = false;
+function toggleGovindChat(){
+  const panel = document.getElementById('govindPanel');
+  const open = !panel.classList.contains('open');
+  panel.classList.toggle('open', open);
+  if(open && !govindOpened){
+    govindOpened = true;
+    addGovindMessage('bot', "Hi, I'm Govind 👋 Ask me anything about GiftMint — orders, payments, gift codes, refunds and more.");
+    renderGovindQuick(GOVIND_STARTER_QUESTIONS);
+  }
+  if(open) document.getElementById('govindInput').focus();
+}
+function addGovindMessage(sender, text){
+  const box = document.getElementById('govindMessages');
+  const div = document.createElement('div');
+  div.className = 'govind-msg ' + sender;
+  div.textContent = text;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+function renderGovindQuick(questions){
+  const wrap = document.getElementById('govindQuick');
+  wrap.innerHTML = questions.map(q => `<button onclick="askGovindQuick(this)">${escHtml(q)}</button>`).join('');
+}
+function askGovindQuick(btn){
+  handleGovindQuestion(btn.textContent);
+}
+function sendGovindMessage(){
+  const input = document.getElementById('govindInput');
+  const text = input.value.trim();
+  if(!text) return;
+  input.value = '';
+  handleGovindQuestion(text);
+}
+function handleGovindQuestion(text){
+  addGovindMessage('user', text);
+  document.getElementById('govindQuick').innerHTML = '';
+  const answer = govindFindAnswer(text);
+  setTimeout(() => {
+    if(answer){
+      addGovindMessage('bot', answer);
+    } else {
+      addGovindMessage('bot', "I couldn't find an exact answer for that. Try asking about buying gift cards, payments, UPI, refunds, or your order status — or email support@giftmint.demo for anything else.");
+      renderGovindQuick(GOVIND_STARTER_QUESTIONS);
+    }
+  }, 350);
 }
 
 // ---------- Init ----------
