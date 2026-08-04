@@ -554,16 +554,36 @@ let authResendSecondsLeft = 0;
 let authConfirmationResult = null;
 let authRecaptchaVerifier = null;
 
+// Tears down any existing verifier (Firebase's .clear() can itself throw if
+// the widget is already gone - e.g. Safari restoring the page from its
+// back/forward cache with the old widget DOM intact) and wipes the
+// container directly as a fallback, so a fresh RecaptchaVerifier can always
+// be rendered into a genuinely empty element.
+function resetAuthRecaptcha(){
+  if(authRecaptchaVerifier){
+    try{ authRecaptchaVerifier.clear(); } catch(e){}
+    authRecaptchaVerifier = null;
+  }
+  const el = document.getElementById('authRecaptchaContainer');
+  if(el) el.innerHTML = '';
+}
 function getAuthRecaptchaVerifier(){
   if(authRecaptchaVerifier) return authRecaptchaVerifier;
   authRecaptchaVerifier = new firebase.auth.RecaptchaVerifier('authRecaptchaContainer', { size: 'invisible' });
   return authRecaptchaVerifier;
 }
+// Safari (and some other browsers) can restore this page from its
+// back/forward cache without re-running setup, leaving a stale, already-
+// rendered reCAPTCHA widget behind ("reCAPTCHA has already been rendered in
+// this element"). Reset on restore so the next OTP attempt always starts
+// from a clean widget.
+window.addEventListener('pageshow', (e) => { if(e.persisted) resetAuthRecaptcha(); });
 
 function openAuth(){
   authPhone = '';
   authIsNewUser = false;
   authConfirmationResult = null;
+  resetAuthRecaptcha();
   renderAuthStep1();
   document.getElementById('authOverlay').classList.add('open');
 }
@@ -571,7 +591,7 @@ function closeAuth(){
   document.getElementById('authOverlay').classList.remove('open');
   pendingAction = null;
   clearInterval(authResendTimer);
-  if(authRecaptchaVerifier){ authRecaptchaVerifier.clear(); authRecaptchaVerifier = null; }
+  resetAuthRecaptcha();
   authConfirmationResult = null;
 }
 // Small original illustration (phone + gift boxes) in GiftMint's own
@@ -663,7 +683,7 @@ async function sendAuthOtp(){
     authConfirmationResult = confirmationResult;
     renderAuthStep2();
   } catch(e){
-    if(authRecaptchaVerifier){ authRecaptchaVerifier.clear(); authRecaptchaVerifier = null; }
+    resetAuthRecaptcha();
     errEl.textContent = e.code ? friendlyAuthError(e) : (e.message || 'Could not send OTP.');
     errEl.style.display = 'block';
     if(btn){ btn.disabled = false; btn.textContent = 'Next'; }
@@ -714,7 +734,7 @@ function startAuthResendTimer(){
 }
 async function resendAuthOtp(){
   try{
-    if(authRecaptchaVerifier){ authRecaptchaVerifier.clear(); authRecaptchaVerifier = null; }
+    resetAuthRecaptcha();
     authConfirmationResult = await firebase.auth().signInWithPhoneNumber('+91' + authPhone, getAuthRecaptchaVerifier());
     startAuthResendTimer();
   } catch(e){ alert(e.code ? friendlyAuthError(e) : (e.message || 'Could not resend OTP.')); }
