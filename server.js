@@ -29,6 +29,12 @@ const GIFTMINT_UPI_VPA = process.env.GIFTMINT_UPI_VPA || '';
 // Shared secret a partner business (e.g. Leela Mart) sends in the
 // X-Partner-Key header when calling /api/partner/bonus-code.
 const PARTNER_API_KEY = process.env.PARTNER_API_KEY || '';
+// Msg91 OTP - the only customer auth method (no passwords). Without a real
+// key configured, OTP send/verify falls back to a fixed dev OTP (000000) so
+// the whole flow can be exercised locally before Msg91 is wired up.
+const MSG91_AUTH_KEY = process.env.MSG91_AUTH_KEY || '';
+const MSG91_TEMPLATE_ID = process.env.MSG91_TEMPLATE_ID || '';
+const MSG91_DEV_OTP = '000000';
 
 const router = new Router();
 
@@ -382,6 +388,44 @@ function razorpayApiRequest(method, pathname, bodyObj) {
   });
 }
 
+// Msg91's OTP widget/API v5 - sendOtp generates and SMSes the code, verifyOtp
+// checks it - both handled entirely on Msg91's side, so we never generate,
+// store, or expire OTPs ourselves.
+function msg91Request(pathname) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'control.msg91.com',
+      path: pathname,
+      method: 'POST',
+      headers: { authkey: MSG91_AUTH_KEY, 'Content-Type': 'application/json' }
+    }, res => {
+      let data = '';
+      res.on('data', c => { data += c; });
+      res.on('end', () => {
+        let parsed;
+        try { parsed = data ? JSON.parse(data) : {}; } catch (e) { parsed = { raw: data }; }
+        resolve({ status: res.statusCode, body: parsed });
+      });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+async function sendOtp(phone) {
+  if (!MSG91_AUTH_KEY) return; // dev mode - see MSG91_DEV_OTP
+  const path = `/api/v5/otp?template_id=${encodeURIComponent(MSG91_TEMPLATE_ID)}&mobile=91${phone}`;
+  const res = await msg91Request(path);
+  if (res.body && res.body.type === 'error') {
+    throw new Error(res.body.message || 'Failed to send OTP.');
+  }
+}
+async function verifyOtp(phone, otp) {
+  if (!MSG91_AUTH_KEY) return otp === MSG91_DEV_OTP; // dev mode fallback
+  const path = `/api/v5/otp/verify?otp=${encodeURIComponent(otp)}&mobile=91${phone}`;
+  const res = await msg91Request(path);
+  return !!(res.body && res.body.type === 'success');
+}
+
 // Razorpay order_id -> priced cart, kept in memory only until the payment is
 // verified (or abandoned). Server-computed pricing is what actually gets
 // charged and later turned into the real order - the client never gets to
@@ -427,63 +471,67 @@ setInterval(() => {
 // ---------------------------------------------------------------------------
 // Auth routes
 // ---------------------------------------------------------------------------
-router.post('/api/auth/signup', async (req, res) => {
-  if (!checkRateLimit(req, 'signup', 10, 60 * 60_000)) return sendJson(res, 429, { error: 'Too many signup attempts. Please try again later.' });
+// Phone + OTP is the only customer auth method - no passwords. One combined
+// flow handles both login and signup: send an OTP to a phone number, then
+// verify it. If that phone already has an account, verifying logs them in;
+// if not, verifying (with name+email also supplied) creates the account.
+router.post('/api/auth/otp/send', async (req, res) => {
+  if (!checkRateLimit(req, 'otp-send', 5, 10 * 60_000)) return sendJson(res, 429, { error: 'Too many OTP requests. Please wait a few minutes and try again.' });
   const body = await readJsonBody(req);
-  const email = String(body.email || '').trim().toLowerCase();
-  const name = String(body.name || '').trim();
-  const password = String(body.password || '');
+  const phone = auth.normalizePhone(body.phone);
+  if (!auth.isValidPhone(phone)) return sendJson(res, 400, { error: 'Please enter a valid 10-digit mobile number.' });
 
-  if (!email || !auth.isValidGmail(email)) return sendJson(res, 400, { error: 'Please enter a valid @gmail.com email address.' });
-  if (!name) return sendJson(res, 400, { error: 'Please enter your name.' });
-  if (!password) return sendJson(res, 400, { error: 'Please enter a password.' });
-  if (await db.getUserByEmail(email)) return sendJson(res, 400, { error: 'An account with this email already exists. Please login instead.' });
-
-  const { salt, hash } = auth.hashPassword(password);
-  const token = auth.newToken();
-  await db.createUser({ email, name, passwordSalt: salt, passwordHash: hash });
-  await db.addSession(email, token);
-  auth.setCookie(res, 'session', token, 60 * 60 * 24 * 30, req);
-  sendJson(res, 200, { name, email });
-});
-
-router.post('/api/auth/login', async (req, res) => {
-  if (!checkRateLimit(req, 'login', 15, 5 * 60_000)) return sendJson(res, 429, { error: 'Too many login attempts. Please wait a few minutes and try again.' });
-  const body = await readJsonBody(req);
-  const email = String(body.email || '').trim().toLowerCase();
-  const password = String(body.password || '');
-
-  if (!email || !auth.isValidGmail(email)) return sendJson(res, 400, { error: 'Please enter a valid @gmail.com email address.' });
-  const u = await db.getUserByEmail(email);
-  if (!u || !auth.verifyPassword(password, u.passwordSalt, u.passwordHash)) {
-    return sendJson(res, 401, { error: 'Invalid email or password. New here? Sign up instead.' });
+  try {
+    await sendOtp(phone);
+  } catch (e) {
+    return sendJson(res, 500, { error: e.message || 'Could not send OTP. Please try again.' });
   }
-  const token = auth.newToken();
-  await db.addSession(email, token);
-  auth.setCookie(res, 'session', token, 60 * 60 * 24 * 30, req);
-  sendJson(res, 200, { name: u.name, email: u.email });
+  const existing = await db.getUserByPhone(phone);
+  sendJson(res, 200, { ok: true, isNewUser: !existing });
 });
 
-router.post('/api/auth/forgot-password', async (req, res) => {
-  // Tighter than login - this endpoint resets a password knowing only the
-  // email (see the known account-takeover limitation), so slowing down
-  // brute-force/enumeration attempts here matters more, not less.
-  if (!checkRateLimit(req, 'forgot-password', 5, 60 * 60_000)) return sendJson(res, 429, { error: 'Too many attempts. Please try again later.' });
+router.post('/api/auth/otp/verify', async (req, res) => {
+  if (!checkRateLimit(req, 'otp-verify', 10, 10 * 60_000)) return sendJson(res, 429, { error: 'Too many attempts. Please wait a few minutes and try again.' });
   const body = await readJsonBody(req);
-  const email = String(body.email || '').trim().toLowerCase();
-  const newPassword = String(body.newPassword || '');
+  const phone = auth.normalizePhone(body.phone);
+  const otp = String(body.otp || '').trim();
+  if (!auth.isValidPhone(phone)) return sendJson(res, 400, { error: 'Please enter a valid 10-digit mobile number.' });
+  if (!otp) return sendJson(res, 400, { error: 'Please enter the OTP.' });
 
-  if (!email || !auth.isValidGmail(email)) return sendJson(res, 400, { error: 'Please enter a valid @gmail.com email address.' });
-  const u = await db.getUserByEmail(email);
-  if (!u) return sendJson(res, 404, { error: 'No account found with this Gmail address. Please sign up instead.' });
-  if (!newPassword || newPassword.length < 4) return sendJson(res, 400, { error: 'Password must be at least 4 characters.' });
+  let otpValid;
+  try {
+    otpValid = await verifyOtp(phone, otp);
+  } catch (e) {
+    return sendJson(res, 500, { error: e.message || 'Could not verify OTP. Please try again.' });
+  }
+  if (!otpValid) return sendJson(res, 400, { error: 'Incorrect or expired OTP.' });
 
-  const { salt, hash } = auth.hashPassword(newPassword);
-  await db.updateUserPassword(email, salt, hash);
+  let u = await db.getUserByPhone(phone);
+  if (!u) {
+    // New number - this is a signup, so name+email are required here (the
+    // combined step 2 form collects them alongside the OTP itself).
+    const name = String(body.name || '').trim();
+    const email = body.email ? String(body.email).trim().toLowerCase() : '';
+    if (!name) return sendJson(res, 400, { error: 'Please enter your name.' });
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return sendJson(res, 400, { error: 'Please enter a valid email address.' });
+
+    // No password is ever used for real login - a random, never-shown one
+    // just satisfies the (still NOT NULL) password columns.
+    const { salt, hash } = auth.hashPassword(auth.newToken());
+    const accountEmail = email || `${phone}@phone.giftmint.local`;
+    try {
+      await db.createUser({ email: accountEmail, name, phone, passwordSalt: salt, passwordHash: hash });
+      u = await db.getUserByPhone(phone);
+    } catch (e) {
+      if (e.code !== 'ER_DUP_ENTRY') throw e;
+      return sendJson(res, 400, { error: 'An account with this email already exists.' });
+    }
+  }
+
   const token = auth.newToken();
-  await db.addSession(email, token);
+  await db.addSession(u.email, token);
   auth.setCookie(res, 'session', token, 60 * 60 * 24 * 30, req);
-  sendJson(res, 200, { name: u.name, email: u.email });
+  sendJson(res, 200, { name: u.name, email: u.email, phone: u.phone });
 });
 
 router.post('/api/auth/logout', async (req, res) => {
@@ -496,7 +544,7 @@ router.post('/api/auth/logout', async (req, res) => {
 router.get('/api/auth/me', async (req, res) => {
   const u = await getCurrentUser(req);
   if (!u) return sendJson(res, 200, { user: null });
-  sendJson(res, 200, { user: { name: u.name, email: u.email, address: u.address || '', photo: u.photo || null } });
+  sendJson(res, 200, { user: { name: u.name, email: u.email, phone: u.phone || null, address: u.address || '', photo: u.photo || null } });
 });
 
 router.post('/api/auth/profile', async (req, res) => {

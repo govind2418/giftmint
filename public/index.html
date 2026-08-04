@@ -202,6 +202,31 @@
   .govind-input-row input:focus{border-color:var(--primary);}
   .govind-input-row button{width:38px;height:38px;border-radius:50%;border:none;background:var(--mint);color:#fff;font-size:15px;cursor:pointer;flex-shrink:0;}
   @media (max-width:480px){ .govind-fab-label{display:none;} .govind-fab{padding:12px;} }
+
+  /* Auth (phone + OTP) modal */
+  .auth-modal{background:#fff;width:100%;max-width:680px;border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(15,23,42,.35);display:flex;min-height:440px;}
+  .auth-side{width:250px;flex-shrink:0;background:linear-gradient(160deg,var(--mint) 0%,var(--primary) 100%);color:#fff;padding:28px 24px;display:flex;flex-direction:column;position:relative;overflow:hidden;}
+  .auth-side h3{font-family:'Poppins',sans-serif;font-size:21px;font-weight:800;line-height:1.25;margin-bottom:8px;}
+  .auth-side p{font-size:12.5px;opacity:.92;line-height:1.5;}
+  .auth-side-art{margin-top:auto;}
+  .auth-main{flex:1;padding:30px 30px 26px;display:flex;flex-direction:column;min-width:0;}
+  .auth-main h2{font-size:19px;font-weight:800;color:var(--text);margin-bottom:4px;}
+  .auth-main .sub{font-size:12.5px;color:var(--muted);margin-bottom:18px;}
+  .auth-phone-row{display:flex;border:1.5px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:14px;}
+  .auth-phone-row .cc{background:#F5F6FB;color:var(--muted);font-size:13.5px;font-weight:600;padding:11px 12px;border-right:1px solid var(--border);flex-shrink:0;}
+  .auth-phone-row input{border:none;padding:11px 12px;font-size:14px;outline:none;flex:1;min-width:0;}
+  .auth-phone-row:focus-within{border-color:var(--primary);}
+  .auth-terms{display:flex;align-items:flex-start;gap:8px;font-size:11.5px;color:var(--muted);line-height:1.5;margin-bottom:18px;}
+  .auth-terms input{margin-top:2px;flex-shrink:0;}
+  .auth-terms a{color:var(--primary);font-weight:600;text-decoration:underline;}
+  .auth-close{position:absolute;top:14px;right:14px;width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.9);color:var(--text);border:none;cursor:pointer;font-size:13px;z-index:2;}
+  .auth-otp-row{display:flex;gap:8px;margin-bottom:8px;}
+  .auth-otp-row input{flex:1;min-width:0;text-align:center;letter-spacing:4px;font-size:18px;font-weight:700;padding:11px 8px;border:1.5px solid var(--border);border-radius:8px;outline:none;}
+  .auth-otp-row input:focus{border-color:var(--primary);}
+  .auth-resend{font-size:12px;color:var(--muted);margin-bottom:16px;}
+  .auth-resend a{color:var(--primary);font-weight:700;cursor:pointer;}
+  .auth-back{font-size:12px;color:var(--muted);cursor:pointer;margin-top:14px;text-align:center;}
+  @media (max-width:560px){ .auth-side{display:none;} .auth-modal{max-width:400px;} }
 </style>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
@@ -305,7 +330,7 @@
 </div>
 
 <div class="invoice-overlay" id="authOverlay">
-  <div class="invoice-box" id="authBox" style="max-width:380px;"></div>
+  <div class="auth-modal" id="authBox"></div>
 </div>
 
 <div class="invoice-overlay" id="historyOverlay">
@@ -378,7 +403,6 @@ let cart = {};               // "platformId:denomination" -> qty (client-side on
 let currentUser = null;      // { name, email } from /api/auth/me
 let currentOrder = null;     // order object currently shown in invoice modal
 let pendingAction = null;    // function to run once login succeeds
-let authMode = "login";
 let isAdminLoggedIn = false;
 
 function platformById(id){ return catalog.find(p => p.id === id); }
@@ -496,7 +520,7 @@ function renderAuthArea(){
       : `<span style="display:inline-flex;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.25);align-items:center;justify-content:center;font-size:12px;font-weight:700;vertical-align:middle;">${currentUser.name.charAt(0).toUpperCase()}</span>`;
     el.innerHTML = `<a onclick="openOrderHistory()">My Orders</a><span onclick="openProfile()" style="display:inline-flex;align-items:center;gap:6px;">${avatar} Hi, ${currentUser.name.split(' ')[0]}</span><a onclick="logout()">Logout</a>`;
   } else {
-    el.innerHTML = `<a onclick="openAuth('login')">Login</a>`;
+    el.innerHTML = `<a onclick="openAuth()">Login</a>`;
   }
   document.getElementById('ownerLoginBlock').style.display = currentUser ? 'none' : '';
 }
@@ -504,97 +528,166 @@ function requireLogin(action){
   if(currentUser){ action(); return; }
   pendingAction = action;
   toggleCart(false);
-  openAuth('login');
+  openAuth();
 }
-function openAuth(mode){
-  authMode = mode || "login";
-  renderAuthForm();
+// ---------- Auth (phone + OTP - no passwords) ----------
+let authPhone = '';
+let authIsNewUser = false;
+let authResendTimer = null;
+let authResendSecondsLeft = 0;
+
+function openAuth(){
+  authPhone = '';
+  authIsNewUser = false;
+  renderAuthStep1();
   document.getElementById('authOverlay').classList.add('open');
 }
-function switchAuthMode(mode){ authMode = mode; renderAuthForm(); }
 function closeAuth(){
   document.getElementById('authOverlay').classList.remove('open');
   pendingAction = null;
+  clearInterval(authResendTimer);
 }
-function isValidGmail(email){ return /^[a-zA-Z0-9._%+-]+@gmail\.com$/.test(email); }
-function restrictGmail(input){
-  const idx = input.value.toLowerCase().indexOf('@gmail.com');
-  if(idx !== -1 && input.value.length > idx + '@gmail.com'.length){
-    input.value = input.value.slice(0, idx + '@gmail.com'.length);
-  }
+// Small original illustration (phone + gift boxes) in GiftMint's own
+// colors for the auth panel - not a copy of any particular site's art.
+function authIllustrationSvg(){
+  return `<svg viewBox="0 0 200 170" width="100%" xmlns="http://www.w3.org/2000/svg">
+    <rect x="66" y="18" width="58" height="104" rx="13" fill="#fff"/>
+    <rect x="72" y="29" width="46" height="76" rx="5" fill="#EEF2FF"/>
+    <rect x="86" y="40" width="18" height="18" rx="3" fill="#10B981"/>
+    <path d="M86 49 h18 M95 40 v18" stroke="#fff" stroke-width="2"/>
+    <circle cx="95" cy="113" r="3" fill="#D8DEFF"/>
+    <g transform="translate(24,108)">
+      <rect width="38" height="32" rx="3" fill="#3730A3"/>
+      <rect width="38" height="10" rx="2" fill="#818CF8"/>
+      <rect x="16" width="6" height="32" fill="#818CF8"/>
+    </g>
+    <g transform="translate(136,104)">
+      <rect width="42" height="34" rx="3" fill="#FBCFE8"/>
+      <rect width="42" height="11" rx="2" fill="#F472B6"/>
+      <rect x="18" width="6" height="34" fill="#F472B6"/>
+    </g>
+    <circle cx="34" cy="30" r="3" fill="#6EE7B7" opacity=".8"/>
+    <circle cx="168" cy="60" r="2.4" fill="#fff" opacity=".7"/>
+    <circle cx="150" cy="24" r="2" fill="#fff" opacity=".6"/>
+  </svg>`;
 }
-function renderAuthForm(){
-  const mode = authMode;
-  const titles = { login: "Login", signup: "Create Account", forgot: "Reset Password" };
-  const subs = {
-    login: pendingAction ? "Please sign in to continue your order" : "GiftMint Account",
-    signup: pendingAction ? "Create an account to continue your order" : "GiftMint Account",
-    forgot: "Enter your Gmail account to reset your password"
-  };
-  let fieldsHtml = "";
-  if(mode === "signup") fieldsHtml += `<div class="form-group"><label>Full Name</label><input type="text" id="authName" placeholder="Your name"></div>`;
-  fieldsHtml += `<div class="form-group"><label>Email (Gmail only)</label><input type="email" id="authEmail" placeholder="yourname@gmail.com" oninput="restrictGmail(this)"></div>`;
-  if(mode === "forgot"){
-    fieldsHtml += `<div class="form-group"><label>New Password</label><input type="password" id="authPassword" placeholder="New password"></div>`;
-    fieldsHtml += `<div class="form-group"><label>Confirm New Password</label><input type="password" id="authPassword2" placeholder="Confirm new password"></div>`;
-  } else {
-    fieldsHtml += `<div class="form-group"><label>Password</label><input type="password" id="authPassword" placeholder="••••••••"></div>`;
-  }
-  let switchHtml = "";
-  if(mode === "login"){
-    switchHtml = `<div class="auth-switch"><a onclick="switchAuthMode('forgot')">Forgot password?</a></div><div class="auth-switch">New here? <a onclick="switchAuthMode('signup')">Create an account</a></div>`;
-  } else if(mode === "signup"){
-    switchHtml = `<div class="auth-switch">Already have an account? <a onclick="switchAuthMode('login')">Login</a></div>`;
-  } else {
-    switchHtml = `<div class="auth-switch">Remembered it? <a onclick="switchAuthMode('login')">Back to Login</a></div>`;
-  }
-  const btnLabel = mode === "login" ? "Login" : mode === "signup" ? "Sign Up" : "Reset Password";
+function renderAuthStep1(){
   document.getElementById('authBox').innerHTML = `
-    <div class="invoice-head"><h2>${titles[mode]}</h2><div class="sub">${subs[mode]}</div></div>
-    <div class="invoice-body">
-      <div class="auth-error" id="authError"></div>
-      ${fieldsHtml}
-      <button class="checkout-btn" onclick="submitAuth()">${btnLabel}</button>
-      ${switchHtml}
+    <div class="auth-side">
+      <button class="auth-close" onclick="closeAuth()">✕</button>
+      <h3>Start Saving on Gift Cards!</h3>
+      <p>Real, redeemable codes for Myntra, Flipkart, Zepto &amp; Amazon — delivered instantly.</p>
+      <div class="auth-side-art">${authIllustrationSvg()}</div>
     </div>
-    <div class="invoice-footer"><button class="btn-close-invoice" onclick="closeAuth()">Cancel</button></div>`;
+    <div class="auth-main">
+      <h2>Log In / Sign Up</h2>
+      <div class="sub">${pendingAction ? 'Verify your number to continue' : 'Enter your mobile number to continue'}</div>
+      <div class="auth-error" id="authError"></div>
+      <div class="auth-phone-row">
+        <span class="cc">+91</span>
+        <input type="tel" id="authPhoneInput" placeholder="Mobile Number" maxlength="10" inputmode="numeric" onkeydown="if(event.key==='Enter') sendAuthOtp()">
+      </div>
+      <label class="auth-terms">
+        <input type="checkbox" id="authTerms" checked>
+        <span>I agree to GiftMint's <a href="#" onclick="event.preventDefault()">Terms of Use</a> and <a href="#" onclick="event.preventDefault()">Privacy Policy</a></span>
+      </label>
+      <button class="checkout-btn" onclick="sendAuthOtp()">Next</button>
+    </div>`;
+  setTimeout(() => { const el = document.getElementById('authPhoneInput'); if(el) el.focus(); }, 50);
 }
-async function submitAuth(){
-  const email = document.getElementById('authEmail').value.trim().toLowerCase();
+async function sendAuthOtp(){
   const errEl = document.getElementById('authError');
-  errEl.style.display = "none";
-  if(!email || !isValidGmail(email)){
-    errEl.textContent = "Please enter a valid @gmail.com email address.";
-    errEl.style.display = "block";
+  errEl.style.display = 'none';
+  const phone = document.getElementById('authPhoneInput').value.trim();
+  if(!/^[6-9]\d{9}$/.test(phone)){
+    errEl.textContent = 'Please enter a valid 10-digit mobile number.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if(!document.getElementById('authTerms').checked){
+    errEl.textContent = "Please agree to the Terms of Use and Privacy Policy.";
+    errEl.style.display = 'block';
     return;
   }
   try{
-    let result;
-    if(authMode === "signup"){
-      const name = document.getElementById('authName').value.trim();
-      const password = document.getElementById('authPassword').value;
-      if(!name){ throw {message:"Please enter your name."}; }
-      if(!password){ throw {message:"Please enter a password."}; }
-      result = await api('/api/auth/signup', { method:'POST', body: JSON.stringify({name, email, password}) });
-    } else if(authMode === "forgot"){
-      const newPassword = document.getElementById('authPassword').value;
-      const confirmPassword = document.getElementById('authPassword2').value;
-      if(!newPassword || newPassword.length < 4){ throw {message:"Password must be at least 4 characters."}; }
-      if(newPassword !== confirmPassword){ throw {message:"Passwords do not match."}; }
-      result = await api('/api/auth/forgot-password', { method:'POST', body: JSON.stringify({email, newPassword}) });
+    const result = await api('/api/auth/otp/send', { method:'POST', body: JSON.stringify({ phone }) });
+    authPhone = phone;
+    authIsNewUser = result.isNewUser;
+    renderAuthStep2();
+  } catch(e){
+    errEl.textContent = e.message || 'Could not send OTP.';
+    errEl.style.display = 'block';
+  }
+}
+function renderAuthStep2(){
+  document.getElementById('authBox').innerHTML = `
+    <div class="auth-side">
+      <button class="auth-close" onclick="closeAuth()">✕</button>
+      <h3>Verify Your Number</h3>
+      <p>We've sent a 6-digit OTP to +91 ${escHtml(authPhone)}.</p>
+      <div class="auth-side-art">${authIllustrationSvg()}</div>
+    </div>
+    <div class="auth-main">
+      <h2>Enter OTP</h2>
+      <div class="sub">Sent to +91 ${escHtml(authPhone)}</div>
+      <div class="auth-error" id="authError"></div>
+      <div class="auth-otp-row">
+        <input type="text" id="authOtpInput" placeholder="••••••" maxlength="6" inputmode="numeric" onkeydown="if(event.key==='Enter') verifyAuthOtp()">
+      </div>
+      <div class="auth-resend" id="authResendWrap"></div>
+      ${authIsNewUser ? `
+        <div class="form-group"><label>Full Name</label><input type="text" id="authNameInput" placeholder="Your name"></div>
+        <div class="form-group"><label>Email (optional)</label><input type="email" id="authEmailInput" placeholder="yourname@email.com"></div>
+      ` : ''}
+      <button class="checkout-btn" onclick="verifyAuthOtp()">Verify &amp; Continue</button>
+      <div class="auth-back" onclick="renderAuthStep1()">← Change number</div>
+    </div>`;
+  setTimeout(() => { const el = document.getElementById('authOtpInput'); if(el) el.focus(); }, 50);
+  startAuthResendTimer();
+}
+function startAuthResendTimer(){
+  clearInterval(authResendTimer);
+  authResendSecondsLeft = 30;
+  const tick = () => {
+    const wrap = document.getElementById('authResendWrap');
+    if(!wrap){ clearInterval(authResendTimer); return; }
+    if(authResendSecondsLeft > 0){
+      wrap.textContent = `Resend OTP in ${authResendSecondsLeft}s`;
+      authResendSecondsLeft--;
     } else {
-      const password = document.getElementById('authPassword').value;
-      result = await api('/api/auth/login', { method:'POST', body: JSON.stringify({email, password}) });
+      wrap.innerHTML = `Didn't get it? <a onclick="resendAuthOtp()">Resend OTP</a>`;
+      clearInterval(authResendTimer);
     }
-    currentUser = { name: result.name, email: result.email };
+  };
+  tick();
+  authResendTimer = setInterval(tick, 1000);
+}
+async function resendAuthOtp(){
+  try{ await api('/api/auth/otp/send', { method:'POST', body: JSON.stringify({ phone: authPhone }) }); startAuthResendTimer(); }
+  catch(e){ alert(e.message); }
+}
+async function verifyAuthOtp(){
+  const errEl = document.getElementById('authError');
+  errEl.style.display = 'none';
+  const otp = document.getElementById('authOtpInput').value.trim();
+  if(!otp){ errEl.textContent = 'Please enter the OTP.'; errEl.style.display = 'block'; return; }
+  const body = { phone: authPhone, otp };
+  if(authIsNewUser){
+    body.name = document.getElementById('authNameInput').value.trim();
+    body.email = document.getElementById('authEmailInput').value.trim();
+    if(!body.name){ errEl.textContent = 'Please enter your name.'; errEl.style.display = 'block'; return; }
+  }
+  try{
+    const result = await api('/api/auth/otp/verify', { method:'POST', body: JSON.stringify(body) });
+    currentUser = { name: result.name, email: result.email, phone: result.phone };
     renderAuthArea();
     const action = pendingAction;
     pendingAction = null;
     closeAuth();
     if(action) action();
   } catch(e){
-    errEl.textContent = e.message || "Something went wrong.";
-    errEl.style.display = "block";
+    errEl.textContent = e.message || 'Something went wrong.';
+    errEl.style.display = 'block';
   }
 }
 async function logout(){
@@ -1617,6 +1710,17 @@ async function init(){
     isAdminLoggedIn = true;
     openAdminDashboard();
   } catch(e){}
+
+  // Auto-prompt login/signup 5s after landing, once per browser session -
+  // only if they're not already logged in and haven't dismissed it already.
+  if(!currentUser && !sessionStorage.getItem('giftmintAuthPromptShown')){
+    setTimeout(() => {
+      if(!currentUser && !document.getElementById('authOverlay').classList.contains('open')){
+        sessionStorage.setItem('giftmintAuthPromptShown', '1');
+        openAuth();
+      }
+    }, 5000);
+  }
 }
 init();
 </script>
