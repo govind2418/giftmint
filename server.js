@@ -33,10 +33,15 @@ const PARTNER_API_KEY = process.env.PARTNER_API_KEY || '';
 // sending/verification happens entirely client-side via the Firebase JS SDK;
 // the server only ever sees the resulting ID token, which it verifies with
 // the Admin SDK to learn the (Firebase-confirmed) phone number.
+// Stored base64-encoded (rather than raw JSON) because the service account's
+// PEM private key is full of backslash-escaped newlines, which several
+// hosts' env-var storage mangles when the raw JSON is pasted in directly;
+// base64 has no special characters, so it survives any storage layer intact.
 const admin = require('firebase-admin');
-const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '';
-if (FIREBASE_SERVICE_ACCOUNT_JSON) {
-  admin.initializeApp({ credential: admin.credential.cert(JSON.parse(FIREBASE_SERVICE_ACCOUNT_JSON)) });
+const FIREBASE_SERVICE_ACCOUNT_B64 = process.env.FIREBASE_SERVICE_ACCOUNT_B64 || '';
+if (FIREBASE_SERVICE_ACCOUNT_B64) {
+  const serviceAccount = JSON.parse(Buffer.from(FIREBASE_SERVICE_ACCOUNT_B64, 'base64').toString('utf8'));
+  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
 
 const router = new Router();
@@ -395,7 +400,7 @@ function razorpayApiRequest(method, pathname, bodyObj) {
 // confirmed the phone OTP, and returns the (Firebase-verified) phone number.
 // Returns null if the token is missing/invalid.
 async function verifyFirebaseIdToken(idToken) {
-  if (!FIREBASE_SERVICE_ACCOUNT_JSON) return null;
+  if (!FIREBASE_SERVICE_ACCOUNT_B64) return null;
   try {
     const decoded = await admin.auth().verifyIdToken(idToken);
     return auth.normalizePhone(decoded.phone_number || '');
