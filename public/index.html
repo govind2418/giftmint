@@ -49,17 +49,67 @@
   .banner-inner p{font-size:14.5px;font-weight:500;color:var(--muted);}
   .banner-tag{background:var(--mint);color:#fff;padding:11px 20px;border-radius:8px;font-weight:700;font-size:13.5px;box-shadow:0 4px 14px rgba(16,185,129,.3);white-space:nowrap;}
 
+  /* Hero carousel - cycles through the catalog's own categories, no
+     external imagery needed (icon + brand gradient only). */
+  .hero-wrap{max-width:1300px;margin:20px auto 0;padding:0 24px;}
+  .hero{position:relative;border-radius:16px;overflow:hidden;height:230px;box-shadow:0 1px 3px rgba(15,23,42,.08);border:1px solid var(--border);}
+  .hero-slide{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 44px;opacity:0;transition:opacity .5s ease;pointer-events:none;}
+  .hero-slide.active{opacity:1;pointer-events:auto;}
+  .hero-slide .hero-text{color:#fff;max-width:60%;}
+  .hero-slide .hero-text h1{font-size:26px;margin-bottom:8px;font-weight:800;letter-spacing:-.3px;}
+  .hero-slide .hero-text p{font-size:13.5px;font-weight:500;opacity:.92;margin-bottom:14px;}
+  .hero-slide .hero-cta{display:inline-block;background:#fff;color:var(--primary-dark);padding:10px 20px;border-radius:24px;font-weight:700;font-size:12.5px;cursor:pointer;border:none;box-shadow:0 3px 10px rgba(0,0,0,.15);}
+  .hero-slide .hero-icon{font-size:96px;line-height:1;filter:drop-shadow(0 8px 20px rgba(0,0,0,.2));}
+  .hero-dots{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:6px;z-index:5;}
+  .hero-dots .dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.5);cursor:pointer;transition:.2s;}
+  .hero-dots .dot.active{background:#fff;width:20px;border-radius:4px;}
+
   /* Platform / denomination catalog */
   .container{max-width:1300px;margin:0 auto;padding:8px 24px 60px;}
   .section-title{font-size:19px;font-weight:800;margin:26px 0 14px;color:var(--text);}
-  .platform-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px;}
-  .platform-card{background:var(--card);border-radius:14px;padding:20px;box-shadow:0 1px 2px rgba(15,23,42,.04);border:1px solid var(--border);transition:.15s;}
-  .platform-card:hover{box-shadow:0 8px 24px rgba(15,23,42,.08);border-color:#D8DEFF;}
-  .platform-head{display:flex;align-items:center;gap:12px;margin-bottom:16px;}
-  .platform-badge{width:44px;height:44px;border-radius:12px;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;flex-shrink:0;}
-  .platform-title{font-size:16px;font-weight:700;}
-  .platform-sub{font-size:11.5px;color:var(--muted);}
-  .denom-row{display:flex;flex-wrap:wrap;gap:8px;}
+
+  /* Search + category chips - browsing UI for a large (100+) brand catalog,
+     modeled on the "search, then filter by category pill" pattern common to
+     gift-card marketplace apps rather than one giant scroll of cards. */
+  .catalog-search{display:flex;align-items:center;gap:10px;background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:14px;}
+  .catalog-search input{border:none;outline:none;flex:1;font-size:14.5px;background:transparent;color:var(--text);}
+  .catalog-search .icon{font-size:15px;opacity:.55;flex-shrink:0;}
+  .category-chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:18px;scrollbar-width:none;}
+  .category-chips::-webkit-scrollbar{display:none;}
+  .category-chip{flex-shrink:0;display:flex;align-items:center;gap:6px;padding:9px 16px;border-radius:999px;border:1.5px solid var(--border);background:var(--card);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:.15s;}
+  .category-chip:hover{border-color:var(--primary);}
+  .category-chip.active{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 4px 14px rgba(79,70,229,.28);}
+
+  .platform-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;}
+  .platform-card{background:var(--card);border-radius:16px;padding:16px 14px;border:1px solid var(--border);transition:.15s;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;gap:12px;}
+  .platform-card:hover{box-shadow:0 10px 26px rgba(15,23,42,.1);border-color:#D8DEFF;transform:translateY(-2px);}
+  .platform-badge{width:52px;height:52px;border-radius:14px;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:19px;flex-shrink:0;box-shadow:0 6px 16px -4px rgba(15,23,42,.25);}
+  .platform-title{font-size:14px;font-weight:800;line-height:1.25;}
+  .platform-sub{font-size:11px;color:var(--muted);font-weight:600;margin-top:2px;}
+  .platform-instock{font-size:10.5px;color:var(--mint-dark);font-weight:700;background:var(--mint-light);padding:3px 8px;border-radius:20px;}
+  .platform-outstock{font-size:10.5px;color:#B4BBC7;font-weight:700;}
+  .no-results{padding:50px 20px;text-align:center;color:var(--muted);grid-column:1/-1;}
+
+  /* Brand detail bottom-sheet - opened from a platform-card tap, holds the
+     denomination picker for just that one brand instead of showing every
+     brand's chips inline (unusable once the catalog is 100+ brands). */
+  #brandSheetOverlay{align-items:flex-end;padding:0;}
+  .brand-sheet{background:#fff;width:100%;max-width:520px;margin:0 auto;border-radius:20px 20px 0 0;padding:22px 22px 28px;max-height:85vh;overflow-y:auto;animation:sheetUp .22s ease-out;}
+  @keyframes sheetUp{from{transform:translateY(100%);}to{transform:translateY(0);}}
+  .brand-sheet-handle{width:38px;height:4px;border-radius:4px;background:var(--border);margin:0 auto 16px;}
+  .brand-sheet-head{display:flex;align-items:center;gap:14px;margin-bottom:20px;}
+  .brand-sheet-head .platform-badge{width:48px;height:48px;font-size:18px;}
+  .brand-sheet-head h3{font-size:17px;font-weight:800;}
+  .brand-sheet-head p{font-size:12px;color:var(--muted);}
+  .brand-sheet .denom-row{display:flex;flex-wrap:wrap;gap:10px;}
+  .gift-mode-toggle{display:flex;gap:8px;margin-bottom:16px;}
+  .gift-mode-btn{flex:1;padding:10px 6px;border-radius:10px;border:1.5px solid var(--border);background:#fff;color:var(--text);font-weight:700;font-size:12.5px;cursor:pointer;transition:.15s;}
+  .gift-mode-btn.active{background:var(--mint);border-color:var(--mint);color:#fff;}
+  .gift-sheet-form{background:var(--mint-light);border:1px solid #A7F3D0;border-radius:12px;padding:14px 14px 4px;margin-bottom:16px;}
+  .gift-sheet-form .form-group label{color:var(--mint-dark);}
+  .cart-gift-banner{margin:0 20px 4px;background:var(--mint-light);border:1px solid #A7F3D0;border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--mint-dark);display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .cart-gift-banner b{display:block;color:var(--text);font-size:13px;}
+  .cart-gift-banner a{color:#c0392b;font-weight:700;cursor:pointer;flex-shrink:0;}
   .denom-chip{padding:10px 4px;border-radius:8px;border:1.5px solid var(--border);background:#fff;color:var(--text);font-weight:700;font-size:13px;cursor:pointer;min-width:64px;text-align:center;transition:.15s;}
   .denom-chip:hover{border-color:var(--mint);background:var(--mint-light);color:var(--mint-dark);}
   .denom-chip.out{border-color:var(--border);color:#B4BBC7;cursor:default;background:#FAFAFB;}
@@ -249,12 +299,22 @@
     .banner-inner h1{font-size:22px;line-height:1.3;margin-bottom:6px;}
     .banner-inner p{font-size:13.5px;}
     .banner-tag{font-size:12.5px;padding:9px 16px;}
-    .container{padding:8px 16px 60px;}
+
+    .hero-wrap{margin:14px auto 0;padding:0 16px;}
+    .hero{height:190px;}
+    .hero-slide{padding:0 18px;}
+    .hero-slide .hero-text{max-width:100%;}
+    .hero-slide .hero-text h1{font-size:18px;}
+    .hero-slide .hero-text p{font-size:12px;margin-bottom:10px;}
+    .hero-slide .hero-icon{display:none;}
+    .container{padding:8px 16px 90px;}
     .section-title{font-size:17px;margin:22px 0 12px;}
-    .platform-card{padding:16px;}
-    .platform-grid{gap:14px;}
+    .platform-grid{grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:11px;}
+    .platform-card{padding:13px 11px;border-radius:14px;gap:9px;}
+    .platform-badge{width:42px;height:42px;font-size:15px;border-radius:12px;}
+    .platform-title{font-size:12.5px;}
     .denom-chip{min-width:0;font-size:12.5px;padding:9px 4px;}
-    footer{padding:26px 18px 14px;}
+    footer{padding:26px 18px 90px;}
     .footer-inner{flex-direction:column;gap:26px;}
   }
   /* On phones the cart drawer and modals run near-full-width, so the
@@ -263,6 +323,29 @@
   @media (max-width:640px){
     body:has(.drawer.open) .govind-fab,
     body:has(.invoice-overlay.open) .govind-fab{display:none;}
+  }
+
+  /* Floating bottom nav - mobile only, mirrors the app-like pill nav bar
+     pattern (Home / Categories / Cart / Orders / Account) instead of relying
+     on the header's cramped icon row once the screen is this narrow. */
+  .mobile-bottom-nav{display:none;}
+  @media (max-width:640px){
+    .mobile-bottom-nav{
+      display:flex; position:fixed; left:12px; right:12px; bottom:12px; z-index:250;
+      background:#fff; border-radius:999px; box-shadow:0 10px 30px rgba(15,23,42,.18); border:1px solid var(--border);
+      padding:6px; justify-content:space-between; align-items:center;
+    }
+    .mobile-bottom-nav button{
+      flex:1; display:flex; flex-direction:column; align-items:center; gap:2px;
+      background:none; border:none; color:var(--muted); font-size:9.5px; font-weight:700;
+      padding:8px 4px; border-radius:999px; cursor:pointer; position:relative;
+    }
+    .mobile-bottom-nav button .nav-icon{font-size:17px;line-height:1;}
+    .mobile-bottom-nav button.active{background:var(--primary);color:#fff;}
+    .mobile-bottom-nav button .nav-badge{position:absolute;top:2px;right:14%;background:var(--mint);color:#fff;font-size:9px;font-weight:800;border-radius:50%;width:15px;height:15px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px #fff;}
+    .govind-fab{bottom:88px;}
+    body:has(.drawer.open) .mobile-bottom-nav,
+    body:has(.invoice-overlay.open) .mobile-bottom-nav{display:none;}
   }
 </style>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
@@ -296,18 +379,17 @@
   </div>
 </header>
 
-<div class="banner">
-  <div class="banner-inner">
-    <div>
-      <h1>Gift Cards for Myntra, Flipkart, Zepto & Amazon</h1>
-      <p>Pick a platform, pick a value, pay securely — the code lands on your invoice instantly.</p>
-    </div>
-    <div class="banner-tag">Instant Digital Delivery</div>
-  </div>
+<div class="hero-wrap">
+  <div class="hero" id="heroCarousel"></div>
 </div>
 
 <div class="container">
   <div class="section-title">Choose a Gift Card</div>
+  <div class="catalog-search">
+    <span class="icon">🔍</span>
+    <input type="text" id="catalogSearchInput" placeholder="Search 130+ brands..." oninput="filterCatalog()">
+  </div>
+  <div class="category-chips" id="categoryChips"></div>
   <div class="platform-grid" id="platformGrid"><div class="loading-note">Loading catalog…</div></div>
 </div>
 
@@ -350,6 +432,7 @@
     <h3>My Cart</h3>
     <button onclick="toggleCart(false)">✕</button>
   </div>
+  <div id="cartGiftBanner"></div>
   <div class="drawer-body" id="cartBody"></div>
   <div class="drawer-footer" id="cartFooter" style="display:none;">
     <div class="total-row" style="font-weight:500;font-size:13.5px;color:var(--muted);"><span>Subtotal</span><span id="cartSubtotal">₹0</span></div>
@@ -366,6 +449,14 @@
 
 <div class="invoice-overlay" id="upiIntentOverlay">
   <div class="invoice-box" id="upiIntentBox" style="max-width:420px;"></div>
+</div>
+
+<div class="invoice-overlay" id="giftFriendOverlay">
+  <div class="invoice-box" id="giftFriendBox" style="max-width:420px;"></div>
+</div>
+
+<div class="invoice-overlay" id="brandSheetOverlay" onclick="if(event.target===this) closeBrandSheet()">
+  <div class="brand-sheet" id="brandSheetBox"></div>
 </div>
 
 <div class="invoice-overlay" id="authOverlay">
@@ -395,6 +486,26 @@
 
 <div class="invoice-overlay" id="addCodeOverlay">
   <div class="invoice-box" id="addCodeBox" style="max-width:420px;"></div>
+</div>
+
+<!-- Mobile-only floating bottom nav -->
+<div class="mobile-bottom-nav" id="mobileBottomNav">
+  <button class="active" onclick="resetView(); window.scrollTo({top:0,behavior:'smooth'});">
+    <span class="nav-icon">🏠</span>Home
+  </button>
+  <button onclick="document.getElementById('categoryChips').scrollIntoView({behavior:'smooth',block:'center'});">
+    <span class="nav-icon">🔎</span>Browse
+  </button>
+  <button onclick="toggleCart(true)" style="position:relative;">
+    <span class="nav-icon">🛒</span>Cart
+    <span class="nav-badge" id="navCartBadge" style="display:none;">0</span>
+  </button>
+  <button onclick="mobileNavOrders()">
+    <span class="nav-icon">🧾</span>Orders
+  </button>
+  <button onclick="mobileNavAccount()">
+    <span class="nav-icon">👤</span><span id="mobileNavAccountLabel">Login</span>
+  </button>
 </div>
 
 <!-- Ask Govind - FAQ chatbot -->
@@ -444,19 +555,106 @@ let currentUser = null;      // { name, email } from /api/auth/me
 let currentOrder = null;     // order object currently shown in invoice modal
 let pendingAction = null;    // function to run once login succeeds
 let isAdminLoggedIn = false;
+let giftRecipient = null;    // {name,phone,address,message} - set from the brand sheet's
+                              // "Send to a Friend" toggle, applies to the whole cart/order
+                              // (the backend models gift delivery per-order, not per-line)
+let giftSheetMode = false;   // which mode the currently-open brand sheet is in
 
 function platformById(id){ return catalog.find(p => p.id === id); }
 function cartKey(platform, denom){ return platform + ':' + denom; }
 
 // Brand-adjacent accent colors purely for visual distinction between
-// platform cards - not the real brand marks (see footer disclaimer).
+// platform cards - not the real brand marks (see footer disclaimer). A few
+// well-known platforms get a hand-picked brand-ish color; everything else
+// (130+ brands added later) gets a deterministic pick from a small curated
+// palette, keyed by platform id so the same brand always gets the same
+// color - same hashing approach as pickIndianName on the server.
 const PLATFORM_COLORS = {
   myntra: '#FF3F6C', flipkart: '#2874F0', zepto: '#8025FB', amazon: '#FF9900'
 };
-function platformColor(id){ return PLATFORM_COLORS[id] || 'var(--primary)'; }
+const PLATFORM_COLOR_PALETTE = ['#4F46E5','#0EA5E9','#10B981','#F59E0B','#EF4444','#8B5CF6','#EC4899','#14B8A6','#F97316','#6366F1'];
+function platformColor(id){
+  if(PLATFORM_COLORS[id]) return PLATFORM_COLORS[id];
+  let hash = 0;
+  for(let i=0;i<id.length;i++) hash = (hash*31 + id.charCodeAt(i)) >>> 0;
+  return PLATFORM_COLOR_PALETTE[hash % PLATFORM_COLOR_PALETTE.length];
+}
+
+// Icons purely for the category filter chips - decorative, not brand marks.
+const CATEGORY_ICONS = {
+  'Grocery':'🛒','Fashion & Lifestyle':'👗','Travel':'✈️','Jewellery':'💎','Electronics':'📱',
+  'Food & Beverages':'🍔','Entertainment':'🎬','Health & Beauty':'💄','Home':'🏠','Sportswear':'👟',
+  'Books':'📚','Luxury':'👑'
+};
+const CATEGORY_TAGLINES = {
+  'Grocery':'Stock up without the queue.', 'Fashion & Lifestyle':'Style vouchers for every wardrobe.',
+  'Travel':'Flights, hotels and holidays.', 'Jewellery':'Gift a little sparkle.',
+  'Electronics':'Gadgets, instantly gifted.', 'Food & Beverages':'Because everyone loves a treat.',
+  'Entertainment':'Movies, music and more.', 'Health & Beauty':'Self-care, delivered as a code.',
+  'Home':'Everything for the house.', 'Sportswear':'Gear up in style.',
+  'Books':'A story, gift-wrapped.', 'Luxury':'Treat someone special.'
+};
+const HERO_GRADIENTS = ['#4F46E5,#3730A3','#0EA5E9,#0369A1','#10B981,#047857','#F59E0B,#B45309','#EC4899,#BE185D','#8B5CF6,#5B21B6'];
+
+// ---------- Hero carousel ----------
+let heroIndex = 0, heroTimer = null;
+function heroSlides(){
+  const cats = [...new Set(catalog.map(p => p.category).filter(Boolean))];
+  if(cats.length === 0) return [];
+  return cats.slice(0, 6).map((c, i) => ({
+    category: c, icon: CATEGORY_ICONS[c] || '🎁', tagline: CATEGORY_TAGLINES[c] || 'Instant digital delivery.',
+    gradient: HERO_GRADIENTS[i % HERO_GRADIENTS.length]
+  }));
+}
+function renderHero(){
+  const slides = heroSlides();
+  const hero = document.getElementById('heroCarousel');
+  if(slides.length === 0){ hero.innerHTML = ''; return; }
+  if(heroIndex >= slides.length) heroIndex = 0;
+  hero.innerHTML = slides.map((s, i) => `
+    <div class="hero-slide ${i===heroIndex?'active':''}" style="background:linear-gradient(120deg,${s.gradient});">
+      <div class="hero-text">
+        <h1>${s.category} Gift Cards</h1>
+        <p>${s.tagline}</p>
+        <button class="hero-cta" onclick="setCatalogCategory('${s.category.replace(/'/g,"\\'")}');document.getElementById('platformGrid').scrollIntoView({behavior:'smooth',block:'start'});">Shop ${s.category}</button>
+      </div>
+      <div class="hero-icon">${s.icon}</div>
+    </div>`).join('') + `<div class="hero-dots">${slides.map((_, i) => `<div class="dot ${i===heroIndex?'active':''}" onclick="goToHeroSlide(${i})"></div>`).join('')}</div>`;
+}
+function goToHeroSlide(i){ heroIndex = i; renderHero(); restartHeroTimer(); }
+function restartHeroTimer(){
+  if(heroTimer) clearInterval(heroTimer);
+  heroTimer = setInterval(() => {
+    const slides = heroSlides();
+    if(slides.length === 0) return;
+    heroIndex = (heroIndex + 1) % slides.length;
+    renderHero();
+  }, 4500);
+}
 
 // ---------- Catalog ----------
-function resetView(){ toggleCart(false); }
+function resetView(){ toggleCart(false); closeBrandSheet(); window.scrollTo({top:0,behavior:'smooth'}); }
+
+let catalogSearch = '';
+let catalogCategory = 'All';
+
+function renderCategoryChips(){
+  const el = document.getElementById('categoryChips');
+  const categories = ['All', ...new Set(catalog.map(p => p.category).filter(Boolean))];
+  el.innerHTML = categories.map(c => `
+    <button class="category-chip ${c===catalogCategory?'active':''}" onclick="setCatalogCategory('${c.replace(/'/g,"\\'")}')">
+      ${c==='All' ? '✨' : (CATEGORY_ICONS[c]||'🎁')} ${c}
+    </button>`).join('');
+}
+function setCatalogCategory(c){
+  catalogCategory = c;
+  renderCategoryChips();
+  renderCatalog();
+}
+function filterCatalog(){
+  catalogSearch = document.getElementById('catalogSearchInput').value.trim().toLowerCase();
+  renderCatalog();
+}
 
 function renderCatalog(){
   const grid = document.getElementById('platformGrid');
@@ -464,20 +662,104 @@ function renderCatalog(){
     grid.innerHTML = `<div class="loading-note">Loading catalog…</div>`;
     return;
   }
-  grid.innerHTML = catalog.map(p => `
-    <div class="platform-card">
-      <div class="platform-head">
-        <div class="platform-badge" style="background:${platformColor(p.id)};">${p.name.charAt(0)}</div>
-        <div><div class="platform-title">${p.name}</div><div class="platform-sub">Gift Card</div></div>
+  if(!document.getElementById('categoryChips').innerHTML) renderCategoryChips();
+  const filtered = catalog.filter(p =>
+    (catalogCategory==='All' || p.category===catalogCategory) &&
+    (!catalogSearch || p.name.toLowerCase().includes(catalogSearch))
+  );
+  if(filtered.length === 0){
+    grid.innerHTML = `<div class="no-results">No gift cards match "${catalogSearch || catalogCategory}".</div>`;
+    return;
+  }
+  grid.innerHTML = filtered.map(p => {
+    const inStockCount = p.denominations.filter(d => d.inStock>0).length;
+    return `
+    <div class="platform-card" onclick="openBrandSheet('${p.id}')">
+      <div class="platform-badge" style="background:${platformColor(p.id)};">${p.name.charAt(0)}</div>
+      <div>
+        <div class="platform-title">${p.name}</div>
+        <div class="platform-sub">Gift Card</div>
       </div>
-      <div class="denom-row">
-        ${p.denominations.map(d => `
-          <button class="denom-chip ${d.inStock>0?'':'out'}" id="chip-${p.id}-${d.value}"
-            ${d.inStock>0 ? `onclick="addToCart('${p.id}',${d.value})"` : 'disabled'}>
-            ₹${d.value}${d.inStock>0?'':'<small>Out of Stock</small>'}
-          </button>`).join('')}
-      </div>
-    </div>`).join('');
+      ${inStockCount>0
+        ? `<span class="platform-instock">${inStockCount} value${inStockCount>1?'s':''} in stock</span>`
+        : `<span class="platform-outstock">Out of stock</span>`}
+    </div>`;
+  }).join('');
+}
+
+// Bottom-sheet with the denomination picker for one brand - opened from a
+// platform-card tap instead of showing all 8 chips inline for every one of
+// 130+ brands, which stopped being usable once the catalog grew past a
+// handful of platforms.
+let brandSheetPlatformId = null;
+function openBrandSheet(id){
+  const p = platformById(id);
+  if(!p) return;
+  brandSheetPlatformId = id;
+  giftSheetMode = !!giftRecipient; // if a friend's already set for this cart, default back into that mode
+  renderBrandSheet();
+  document.getElementById('brandSheetOverlay').classList.add('open');
+}
+function setGiftSheetMode(isGift){
+  giftSheetMode = isGift;
+  renderBrandSheet();
+}
+function renderBrandSheet(){
+  const p = platformById(brandSheetPlatformId);
+  if(!p) return;
+  const g = giftRecipient || {};
+  document.getElementById('brandSheetBox').innerHTML = `
+    <div class="brand-sheet-handle"></div>
+    <div class="brand-sheet-head">
+      <div class="platform-badge" style="background:${platformColor(p.id)};">${p.name.charAt(0)}</div>
+      <div><h3>${p.name} Gift Card</h3><p>${giftSheetMode ? "Fill your friend's details, then pick a value" : 'Pick a value to add to cart'}</p></div>
+    </div>
+    <div class="gift-mode-toggle">
+      <button class="gift-mode-btn ${!giftSheetMode?'active':''}" onclick="setGiftSheetMode(false)">🛍️ For Myself</button>
+      <button class="gift-mode-btn ${giftSheetMode?'active':''}" onclick="setGiftSheetMode(true)">🎁 Send to a Friend</button>
+    </div>
+    ${giftSheetMode ? `
+    <div class="gift-sheet-form">
+      <div class="auth-error" id="giftSheetError"></div>
+      <div class="form-group"><label>Friend's Name</label><input type="text" id="giftSheetName" placeholder="Their full name" value="${escHtml(g.name||'')}"></div>
+      <div class="form-group"><label>Friend's Phone Number</label><input type="tel" id="giftSheetPhone" placeholder="10-digit mobile number" maxlength="10" value="${escHtml(g.phone||'')}"></div>
+      <div class="form-group"><label>Delivery Address</label><textarea id="giftSheetAddress" rows="2" placeholder="Where should we deliver this?" style="width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px;font-family:inherit;">${escHtml(g.address||'')}</textarea></div>
+      <div class="form-group"><label>Gift Message (optional)</label><input type="text" id="giftSheetMessage" placeholder="e.g. Happy Birthday!" maxlength="300" value="${escHtml(g.message||'')}"></div>
+    </div>` : ''}
+    <div class="denom-row">
+      ${p.denominations.map(d => `
+        <button class="denom-chip ${d.inStock>0?'':'out'}" id="chip-${p.id}-${d.value}"
+          ${d.inStock>0 ? `onclick="handleDenomClick('${p.id}',${d.value})"` : 'disabled'}>
+          ₹${d.value}${d.inStock>0?'':'<small>Out of Stock</small>'}
+        </button>`).join('')}
+    </div>`;
+}
+function closeBrandSheet(){ document.getElementById('brandSheetOverlay').classList.remove('open'); }
+
+// If gift mode is active, validate + save the recipient (shared across the
+// whole cart, since the backend models "who gets this" per-order, not
+// per-line) before adding the item; otherwise a plain add-to-cart.
+function handleDenomClick(platform, denom){
+  if(giftSheetMode){
+    const errEl = document.getElementById('giftSheetError');
+    const name = document.getElementById('giftSheetName').value.trim();
+    const phone = document.getElementById('giftSheetPhone').value.trim();
+    const address = document.getElementById('giftSheetAddress').value.trim();
+    const message = document.getElementById('giftSheetMessage').value.trim();
+    if(!name || !phone || !address){
+      errEl.textContent = "Please enter your friend's name, phone number and delivery address first.";
+      errEl.style.display = 'block';
+      return;
+    }
+    errEl.style.display = 'none';
+    giftRecipient = { name, phone, address, message: message || null };
+  }
+  addToCart(platform, denom);
+  closeBrandSheet();
+}
+function removeGiftRecipient(){
+  giftRecipient = null;
+  renderCart();
 }
 
 // ---------- Cart ----------
@@ -508,17 +790,28 @@ function changeQty(key, delta){
 }
 function removeItem(key){ delete cart[key]; updateCartCount(); saveCart(); renderCart(); }
 function updateCartCount(){
-  document.getElementById('cartCount').textContent = Object.values(cart).reduce((a,b)=>a+b,0);
+  const count = Object.values(cart).reduce((a,b)=>a+b,0);
+  document.getElementById('cartCount').textContent = count;
+  const badge = document.getElementById('navCartBadge');
+  if(badge){ badge.textContent = count; badge.style.display = count>0 ? 'flex' : 'none'; }
 }
 function renderCart(){
   const body = document.getElementById('cartBody');
   const footer = document.getElementById('cartFooter');
+  const banner = document.getElementById('cartGiftBanner');
   const keys = Object.keys(cart);
   if(keys.length===0){
     body.innerHTML = `<div class="empty-cart">Your cart is empty.<br>Pick a gift card to get started!</div>`;
     footer.style.display = "none";
+    giftRecipient = null;
+    banner.innerHTML = '';
     return;
   }
+  banner.innerHTML = giftRecipient ? `
+    <div class="cart-gift-banner">
+      <div>🎁 Sending as a gift to <b>${escHtml(giftRecipient.name)}</b></div>
+      <a onclick="removeGiftRecipient()">Remove</a>
+    </div>` : '';
   let subtotal = 0;
   body.innerHTML = keys.map(key => {
     const [platform, denomStr] = key.split(':');
@@ -563,6 +856,14 @@ function renderAuthArea(){
     el.innerHTML = `<a onclick="openAuth()">Login</a>`;
   }
   document.getElementById('ownerLoginBlock').style.display = currentUser ? 'none' : '';
+  const navLabel = document.getElementById('mobileNavAccountLabel');
+  if(navLabel) navLabel.textContent = currentUser ? currentUser.name.split(' ')[0] : 'Login';
+}
+function mobileNavOrders(){
+  if(currentUser) openOrderHistory(); else openAuth();
+}
+function mobileNavAccount(){
+  if(currentUser) openProfile(); else openAuth();
 }
 function requireLogin(action){
   if(currentUser){ action(); return; }
@@ -822,7 +1123,7 @@ function placeOrder(){
       return { platform, denomination: Number(denom), qty: cart[key] };
     });
     try{
-      const order = await api('/api/payments/create-order', { method:'POST', body: JSON.stringify({ items }) });
+      const order = await api('/api/payments/create-order', { method:'POST', body: JSON.stringify({ items, gift: giftRecipient }) });
       openRazorpayCheckout(order);
     } catch(e){ alert(e.message); }
   });
@@ -851,7 +1152,7 @@ function openRazorpayCheckout(order){
         currentOrder = verified;
         renderInvoice();
         document.getElementById('invoiceOverlay').classList.add('open');
-        cart = {}; updateCartCount(); saveCart(); renderCart();
+        cart = {}; giftRecipient = null; updateCartCount(); saveCart(); renderCart();
         toggleCart(false);
         loadCatalog();
       } catch(e){
@@ -875,7 +1176,7 @@ function payViaUpiIntent(){
       return { platform, denomination: Number(denom), qty: cart[key] };
     });
     try{
-      const result = await api('/api/payments/upi-intent/create', { method:'POST', body: JSON.stringify({ items }) });
+      const result = await api('/api/payments/upi-intent/create', { method:'POST', body: JSON.stringify({ items, gift: giftRecipient }) });
       openUpiIntentModal(result);
     } catch(e){ alert(e.message); }
   });
@@ -926,7 +1227,7 @@ async function pollUpiIntentStatus(id){
       currentOrder = await api('/api/orders/' + encodeURIComponent(s.orderId));
       renderInvoice();
       document.getElementById('invoiceOverlay').classList.add('open');
-      cart = {}; updateCartCount(); saveCart(); renderCart();
+      cart = {}; giftRecipient = null; updateCartCount(); saveCart(); renderCart();
       loadCatalog();
     } else if(s.status === 'rejected'){
       clearInterval(upiPollHandle);
@@ -1042,12 +1343,63 @@ function copyCode(btn, code){
 function renderInvoice(){
   if(!currentOrder) return;
   const o = currentOrder;
+  const giftBtn = o.isGift
+    ? `<button class="btn-buy" style="background:#ECFDF5;color:#059669;" disabled>🎁 Sent to ${escHtml(o.recipientName)}</button>`
+    : `<button class="btn-buy" onclick="openGiftFriendForm()">🎁 Send to a Friend</button>`;
   document.getElementById('invoiceBox').innerHTML = `
     <iframe id="invoiceFrame" src="/api/orders/${encodeURIComponent(o.orderId)}/invoice" style="width:100%;height:72vh;border:none;display:block;background:var(--bg);"></iframe>
     <div class="invoice-footer">
       <button class="btn-close-invoice" onclick="closeInvoice()">Close</button>
+      ${giftBtn}
       <button class="btn-print" onclick="printInvoiceFrame()">Print Invoice</button>
     </div>`;
+}
+
+// ---------- Send to a Friend ----------
+// Lets the buyer redirect delivery of an already-paid order to someone
+// else's contact info, after checkout - the order itself is unaffected
+// (buyer's own name/email stay on record as who paid), we just tag it with
+// where the admin should actually deliver the code(s).
+function openGiftFriendForm(){
+  if(!currentOrder) return;
+  document.getElementById('giftFriendBox').innerHTML = `
+    <div class="invoice-head"><h2>🎁 Send to a Friend</h2><div class="sub">Order ${escHtml(currentOrder.orderId)} &middot; we'll deliver to them instead</div></div>
+    <div class="invoice-body">
+      <div class="auth-error" id="giftFriendError"></div>
+      <div class="form-group"><label>Friend's Name</label><input type="text" id="giftFriendName" placeholder="Their full name"></div>
+      <div class="form-group"><label>Friend's Phone Number</label><input type="tel" id="giftFriendPhone" placeholder="10-digit mobile number" maxlength="10"></div>
+      <div class="form-group"><label>Delivery Address</label><textarea id="giftFriendAddress" rows="3" placeholder="Where should we deliver this?" style="width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px;font-family:inherit;"></textarea></div>
+      <div class="form-group"><label>Gift Message (optional)</label><input type="text" id="giftFriendMessage" placeholder="e.g. Happy Birthday!" maxlength="300"></div>
+    </div>
+    <div class="invoice-footer">
+      <button class="btn-close-invoice" onclick="closeGiftFriendForm()">Cancel</button>
+      <button class="checkout-btn" style="flex:1;" onclick="submitGiftFriend()">Send Gift</button>
+    </div>`;
+  document.getElementById('giftFriendOverlay').classList.add('open');
+}
+function closeGiftFriendForm(){ document.getElementById('giftFriendOverlay').classList.remove('open'); }
+async function submitGiftFriend(){
+  const errEl = document.getElementById('giftFriendError');
+  errEl.style.display = 'none';
+  const name = document.getElementById('giftFriendName').value.trim();
+  const phone = document.getElementById('giftFriendPhone').value.trim();
+  const address = document.getElementById('giftFriendAddress').value.trim();
+  const message = document.getElementById('giftFriendMessage').value.trim();
+  if(!name || !phone || !address){
+    errEl.textContent = "Please enter your friend's name, phone number and delivery address.";
+    errEl.style.display = 'block';
+    return;
+  }
+  try{
+    const updated = await api('/api/orders/' + encodeURIComponent(currentOrder.orderId) + '/gift', {
+      method: 'POST', body: JSON.stringify({ name, phone, address, message })
+    });
+    currentOrder = updated;
+    closeGiftFriendForm();
+    renderInvoice();
+  } catch(e){
+    errEl.textContent = e.message; errEl.style.display = 'block';
+  }
 }
 function printInvoiceFrame(){
   const frame = document.getElementById('invoiceFrame');
@@ -1300,7 +1652,7 @@ async function loadAdminOrdersTable(){
     : orders.map(o => `
         <tr>
           <td>${o.orderId}</td>
-          <td>${o.customerName}<br><small style="color:var(--muted);">${o.customerEmail}</small></td>
+          <td>${o.customerName}<br><small style="color:var(--muted);">${o.customerEmail}</small>${o.isGift ? `<br><span class="history-status delivered" style="background:#ECFDF5;color:#059669;">🎁 Gift for ${o.recipientName}</span>` : ''}</td>
           <td>${o.orderDate}</td>
           <td>${o.items.map(i => i.platformName + ' ₹' + i.denomination).join(', ')}</td>
           <td>₹${o.grandTotal.toLocaleString('en-IN')}</td>
@@ -1804,6 +2156,8 @@ async function loadCatalog(){
   try{
     catalog = await api('/api/catalog');
     renderCatalog();
+    renderHero();
+    restartHeroTimer();
   } catch(e){ console.error('Failed to load catalog', e); }
 }
 async function init(){

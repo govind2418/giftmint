@@ -142,6 +142,25 @@ function computeCartLines(cartItems) {
   return lines;
 }
 
+// "Send to a Friend": the buyer pays, but wants the code(s) delivered to
+// someone else. Validated the same way cart lines are - trust nothing from
+// the client beyond it being present and shaped right. Returns null when no
+// gift recipient was submitted (a normal order for yourself).
+function validateGiftRecipient(raw) {
+  if (!raw) return null;
+  const name = String(raw.name || '').trim();
+  const phone = String(raw.phone || '').replace(/\D/g, '');
+  const address = String(raw.address || '').trim();
+  const message = String(raw.message || '').trim().slice(0, 300);
+  if (!name || !phone || !address) {
+    throw new Error("Please enter your friend's name, phone number and delivery address.");
+  }
+  if (phone.length !== 10) {
+    throw new Error("Please enter a valid 10-digit phone number for your friend.");
+  }
+  return { name, phone, address, message: message || null };
+}
+
 // Timestamp + 4 random bytes of entropy - safe against collisions even
 // when many orders (e.g. a burst of webhook payments) are created in the
 // same millisecond, unlike a plain Date.now() slice.
@@ -570,7 +589,7 @@ router.get('/api/catalog', async (req, res) => {
   const stock = await db.getRealStock();
   const stockMap = new Map(stock.map(s => [`${s.platform}:${s.denomination}`, s.available]));
   const catalog = PLATFORMS.map(p => ({
-    id: p.id, name: p.name,
+    id: p.id, name: p.name, category: p.category,
     denominations: DENOMINATIONS.map(d => ({ value: d, inStock: stockMap.get(`${p.id}:${d}`) || 0 }))
   }));
   sendJson(res, 200, catalog);
@@ -594,6 +613,9 @@ router.post('/api/payments/create-order', async (req, res) => {
   const body = await readJsonBody(req);
   let lines;
   try { lines = computeCartLines(body.items || []); }
+  catch (e) { return sendJson(res, 400, { error: e.message }); }
+  let gift;
+  try { gift = validateGiftRecipient(body.gift); }
   catch (e) { return sendJson(res, 400, { error: e.message }); }
 
   // Real stock is only ever handed to an authenticated, logged-in buyer -
@@ -626,7 +648,7 @@ router.post('/api/payments/create-order', async (req, res) => {
     return sendJson(res, 500, { error: msg });
   }
 
-  pendingPayments.set(rzpRes.body.id, { userEmail: u.email, lines, subtotal, platformFee, grandTotal, createdAt: Date.now() });
+  pendingPayments.set(rzpRes.body.id, { userEmail: u.email, lines, subtotal, platformFee, grandTotal, gift, createdAt: Date.now() });
 
   sendJson(res, 200, {
     key_id: RAZORPAY_KEY_ID,
@@ -672,7 +694,12 @@ router.post('/api/payments/verify', async (req, res) => {
       items, subtotal: pending.subtotal, tax: pending.platformFee, delivery: 0, grandTotal: pending.grandTotal,
       status: 'Delivered', offline: false,
       source: 'razorpay-checkout', razorpayOrderId: razorpay_order_id, razorpayPaymentId: razorpay_payment_id,
-      userEmail: u.email, customerName: u.name, customerEmail: u.email
+      userEmail: u.email, customerName: u.name, customerEmail: u.email,
+      isGift: !!pending.gift,
+      recipientName: pending.gift ? pending.gift.name : null,
+      recipientPhone: pending.gift ? pending.gift.phone : null,
+      recipientAddress: pending.gift ? pending.gift.address : null,
+      giftMessage: pending.gift ? pending.gift.message : null
     };
     await db.createOrder(orderObj, conn);
     return orderObj;
@@ -707,6 +734,9 @@ router.post('/api/payments/upi-intent/create', async (req, res) => {
   let lines;
   try { lines = computeCartLines(body.items || []); }
   catch (e) { return sendJson(res, 400, { error: e.message }); }
+  let gift;
+  try { gift = validateGiftRecipient(body.gift); }
+  catch (e) { return sendJson(res, 400, { error: e.message }); }
 
   const stockError = await checkStockAvailability(lines);
   if (stockError) return sendJson(res, 400, { error: stockError });
@@ -717,7 +747,7 @@ router.post('/api/payments/upi-intent/create', async (req, res) => {
   if (grandTotal < 1) return sendJson(res, 400, { error: 'Order amount must be at least Rs. 1.' });
 
   const id = newOrderId('GM-UPI');
-  await db.createPendingUpiOrder({ id, userEmail: u.email, items: lines, subtotal, platformFee, grandTotal });
+  await db.createPendingUpiOrder({ id, userEmail: u.email, items: lines, subtotal, platformFee, grandTotal, gift });
   const upiParams = { vpa: GIFTMINT_UPI_VPA, payeeName: 'GiftMint', amount: grandTotal, note: `GiftMint ${id}`, referenceId: id };
   const upiUri = buildUpiIntentUri(upiParams);
   // upiParams is sent alongside the generic upiUri (used for the QR code,
@@ -754,6 +784,27 @@ router.get('/api/orders/:id', async (req, res, params) => {
   const order = await db.getOrderById(params.id);
   if (!order || order.customerEmail !== u.email) return sendJson(res, 404, { error: 'Order not found.' });
   sendJson(res, 200, order);
+});
+
+// "Send to a Friend": the buyer redirects delivery of an already-paid order
+// to someone else's contact info. One-shot - once a recipient is set it
+// can't be silently swapped out from under a code that may already have
+// been shared, so a second call is rejected.
+router.post('/api/orders/:id/gift', async (req, res, params) => {
+  const u = await getCurrentUser(req);
+  if (!u) return sendJson(res, 401, { error: 'Please log in.' });
+  const order = await db.getOrderById(params.id);
+  if (!order || order.customerEmail !== u.email) return sendJson(res, 404, { error: 'Order not found.' });
+  if (order.isGift) return sendJson(res, 400, { error: 'This order is already marked as a gift.' });
+
+  const body = await readJsonBody(req);
+  let gift;
+  try { gift = validateGiftRecipient(body); }
+  catch (e) { return sendJson(res, 400, { error: e.message }); }
+  if (!gift) return sendJson(res, 400, { error: "Please enter your friend's name, phone number and delivery address." });
+
+  await db.setOrderGiftRecipient(params.id, gift);
+  sendJson(res, 200, await db.getOrderById(params.id));
 });
 
 // Same printable template as the admin invoice, gated by ownership instead
@@ -899,11 +950,15 @@ async function renderInvoiceHtml(o) {
     <div class="body-pad">
       <div class="row">
         <div class="box"><h4>Billed To</h4><p>${esc(o.customerName)}<br>${esc(o.customerEmail)}</p></div>
-        <div class="box"><h4>Delivery</h4><p>Digital &mdash; code(s) below</p></div>
+        <div class="box"><h4>Delivery</h4><p>${o.isGift ? 'Digital &mdash; forward code(s) to recipient below' : 'Digital &mdash; code(s) below'}</p></div>
         <div class="box"><h4>Source</h4><p>${esc(o.offline ? 'Offline' : 'Online')}${o.source ? ' &middot; ' + esc(ORDER_SOURCE_LABELS[o.source] || o.source) : ''}</p></div>
         ${contact ? `<div class="box"><h4>Contact</h4><p>${esc(maskPhone(contact))}</p></div>` : ''}
         ${o.partnerName ? `<div class="box"><h4>Partner</h4><p>${esc(o.partnerName)}<br><small>Ref: ${esc(o.partnerOrderRef)}</small></p></div>` : ''}
       </div>
+      ${o.isGift ? `<div class="row" style="background:var(--mint-light);border:1px solid #A7F3D0;border-radius:10px;padding:14px 16px;margin-top:-8px;">
+        <div class="box"><h4>🎁 Sending As A Gift To</h4><p><strong>${esc(o.recipientName)}</strong><br>${esc(maskPhone(o.recipientPhone))}<br>${esc(o.recipientAddress)}</p></div>
+        ${o.giftMessage ? `<div class="box"><h4>Gift Message</h4><p>${esc(o.giftMessage)}</p></div>` : ''}
+      </div>` : ''}
       <table><thead><tr><th>Gift Card</th><th>Value</th><th>Code</th></tr></thead><tbody>${rows}</tbody></table>
       <div class="totals">
         ${o.tax > 0 ? `<div><span>Subtotal</span><span>Rs. ${o.subtotal.toLocaleString('en-IN')}</span></div>
@@ -1065,7 +1120,12 @@ router.post('/api/admin/upi-pending/:id/approve', async (req, res, params) => {
       address: 'Digital delivery',
       items, subtotal: pending.subtotal, tax: pending.platformFee, delivery: 0, grandTotal: pending.grandTotal,
       status: 'Delivered', offline: false, source: 'upi-intent-manual',
-      userEmail: buyer.email, customerName: buyer.name, customerEmail: buyer.email
+      userEmail: buyer.email, customerName: buyer.name, customerEmail: buyer.email,
+      isGift: !!pending.gift,
+      recipientName: pending.gift ? pending.gift.name : null,
+      recipientPhone: pending.gift ? pending.gift.phone : null,
+      recipientAddress: pending.gift ? pending.gift.address : null,
+      giftMessage: pending.gift ? pending.gift.message : null
     };
     await db.createOrder(orderObj, conn);
     const resolved = await db.resolvePendingUpiOrder(pending.id, 'approved', orderId, null, conn);
