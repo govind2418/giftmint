@@ -723,6 +723,7 @@ function renderBrandSheet(){
       <div class="auth-error" id="giftSheetError"></div>
       <div class="form-group"><label>Friend's Name</label><input type="text" id="giftSheetName" placeholder="Their full name" value="${escHtml(g.name||'')}"></div>
       <div class="form-group"><label>Friend's Phone Number</label><input type="tel" id="giftSheetPhone" placeholder="10-digit mobile number" maxlength="10" value="${escHtml(g.phone||'')}"></div>
+      <div class="form-group"><label>Friend's Email (optional)</label><input type="email" id="giftSheetEmail" placeholder="We'll email the code straight to them" value="${escHtml(g.email||'')}"></div>
       <div class="form-group"><label>Delivery Address</label><textarea id="giftSheetAddress" rows="2" placeholder="Where should we deliver this?" style="width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px;font-family:inherit;">${escHtml(g.address||'')}</textarea></div>
       <div class="form-group"><label>Gift Message (optional)</label><input type="text" id="giftSheetMessage" placeholder="e.g. Happy Birthday!" maxlength="300" value="${escHtml(g.message||'')}"></div>
     </div>` : ''}
@@ -744,6 +745,7 @@ function handleDenomClick(platform, denom){
     const errEl = document.getElementById('giftSheetError');
     const name = document.getElementById('giftSheetName').value.trim();
     const phone = document.getElementById('giftSheetPhone').value.trim();
+    const email = document.getElementById('giftSheetEmail').value.trim();
     const address = document.getElementById('giftSheetAddress').value.trim();
     const message = document.getElementById('giftSheetMessage').value.trim();
     if(!name || !phone || !address){
@@ -751,8 +753,13 @@ function handleDenomClick(platform, denom){
       errEl.style.display = 'block';
       return;
     }
+    if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+      errEl.textContent = "Please enter a valid email address for your friend, or leave it blank.";
+      errEl.style.display = 'block';
+      return;
+    }
     errEl.style.display = 'none';
-    giftRecipient = { name, phone, address, message: message || null };
+    giftRecipient = { name, phone, address, email: email || null, message: message || null };
   }
   addToCart(platform, denom);
   closeBrandSheet();
@@ -809,7 +816,7 @@ function renderCart(){
   }
   banner.innerHTML = giftRecipient ? `
     <div class="cart-gift-banner">
-      <div>🎁 Sending as a gift to <b>${escHtml(giftRecipient.name)}</b></div>
+      <div>🎁 Sending as a gift to <b>${escHtml(giftRecipient.name)}</b>${giftRecipient.email ? ' — code will be emailed to them directly' : " — you'll need to forward the code yourself"}</div>
       <a onclick="removeGiftRecipient()">Remove</a>
     </div>` : '';
   let subtotal = 0;
@@ -1368,6 +1375,7 @@ function openGiftFriendForm(){
       <div class="auth-error" id="giftFriendError"></div>
       <div class="form-group"><label>Friend's Name</label><input type="text" id="giftFriendName" placeholder="Their full name"></div>
       <div class="form-group"><label>Friend's Phone Number</label><input type="tel" id="giftFriendPhone" placeholder="10-digit mobile number" maxlength="10"></div>
+      <div class="form-group"><label>Friend's Email (optional)</label><input type="email" id="giftFriendEmail" placeholder="We'll email the code straight to them"></div>
       <div class="form-group"><label>Delivery Address</label><textarea id="giftFriendAddress" rows="3" placeholder="Where should we deliver this?" style="width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px;font-family:inherit;"></textarea></div>
       <div class="form-group"><label>Gift Message (optional)</label><input type="text" id="giftFriendMessage" placeholder="e.g. Happy Birthday!" maxlength="300"></div>
     </div>
@@ -1383,6 +1391,7 @@ async function submitGiftFriend(){
   errEl.style.display = 'none';
   const name = document.getElementById('giftFriendName').value.trim();
   const phone = document.getElementById('giftFriendPhone').value.trim();
+  const email = document.getElementById('giftFriendEmail').value.trim();
   const address = document.getElementById('giftFriendAddress').value.trim();
   const message = document.getElementById('giftFriendMessage').value.trim();
   if(!name || !phone || !address){
@@ -1392,7 +1401,7 @@ async function submitGiftFriend(){
   }
   try{
     const updated = await api('/api/orders/' + encodeURIComponent(currentOrder.orderId) + '/gift', {
-      method: 'POST', body: JSON.stringify({ name, phone, address, message })
+      method: 'POST', body: JSON.stringify({ name, phone, email, address, message })
     });
     currentOrder = updated;
     closeGiftFriendForm();

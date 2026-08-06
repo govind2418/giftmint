@@ -151,6 +151,7 @@ function validateGiftRecipient(raw) {
   const name = String(raw.name || '').trim();
   const phone = String(raw.phone || '').replace(/\D/g, '');
   const address = String(raw.address || '').trim();
+  const email = String(raw.email || '').trim().toLowerCase();
   const message = String(raw.message || '').trim().slice(0, 300);
   if (!name || !phone || !address) {
     throw new Error("Please enter your friend's name, phone number and delivery address.");
@@ -158,7 +159,13 @@ function validateGiftRecipient(raw) {
   if (phone.length !== 10) {
     throw new Error("Please enter a valid 10-digit phone number for your friend.");
   }
-  return { name, phone, address, message: message || null };
+  // Email is optional - if given, it's how we deliver the code straight to
+  // them instead of the buyer; if omitted, the buyer still gets it and
+  // forwards it manually using the name/phone/address above.
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error("Please enter a valid email address for your friend, or leave it blank.");
+  }
+  return { name, phone, address, email: email || null, message: message || null };
 }
 
 // Timestamp + 4 random bytes of entropy - safe against collisions even
@@ -699,6 +706,7 @@ router.post('/api/payments/verify', async (req, res) => {
       recipientName: pending.gift ? pending.gift.name : null,
       recipientPhone: pending.gift ? pending.gift.phone : null,
       recipientAddress: pending.gift ? pending.gift.address : null,
+      recipientEmail: pending.gift ? pending.gift.email : null,
       giftMessage: pending.gift ? pending.gift.message : null
     };
     await db.createOrder(orderObj, conn);
@@ -804,7 +812,12 @@ router.post('/api/orders/:id/gift', async (req, res, params) => {
   if (!gift) return sendJson(res, 400, { error: "Please enter your friend's name, phone number and delivery address." });
 
   await db.setOrderGiftRecipient(params.id, gift);
-  sendJson(res, 200, await db.getOrderById(params.id));
+  const updated = await db.getOrderById(params.id);
+  // The original order-creation email already went to the buyer before this
+  // "send to a friend" call ever happened - this is the one point where the
+  // friend's own code email actually goes out, if they gave us an email.
+  mailer.sendOrderEmail(updated).catch(e => console.error('Gift recipient email failed:', e.message));
+  sendJson(res, 200, updated);
 });
 
 // Same printable template as the admin invoice, gated by ownership instead
@@ -950,13 +963,13 @@ async function renderInvoiceHtml(o) {
     <div class="body-pad">
       <div class="row">
         <div class="box"><h4>Billed To</h4><p>${esc(o.customerName)}<br>${esc(o.customerEmail)}</p></div>
-        <div class="box"><h4>Delivery</h4><p>${o.isGift ? 'Digital &mdash; forward code(s) to recipient below' : 'Digital &mdash; code(s) below'}</p></div>
+        <div class="box"><h4>Delivery</h4><p>${o.isGift ? (o.recipientEmail ? 'Digital &mdash; emailed directly to your friend' : 'Digital &mdash; forward code(s) to recipient below') : 'Digital &mdash; code(s) below'}</p></div>
         <div class="box"><h4>Source</h4><p>${esc(o.offline ? 'Offline' : 'Online')}${o.source ? ' &middot; ' + esc(ORDER_SOURCE_LABELS[o.source] || o.source) : ''}</p></div>
         ${contact ? `<div class="box"><h4>Contact</h4><p>${esc(maskPhone(contact))}</p></div>` : ''}
         ${o.partnerName ? `<div class="box"><h4>Partner</h4><p>${esc(o.partnerName)}<br><small>Ref: ${esc(o.partnerOrderRef)}</small></p></div>` : ''}
       </div>
       ${o.isGift ? `<div class="row" style="background:var(--mint-light);border:1px solid #A7F3D0;border-radius:10px;padding:14px 16px;margin-top:-8px;">
-        <div class="box"><h4>🎁 Sending As A Gift To</h4><p><strong>${esc(o.recipientName)}</strong><br>${esc(maskPhone(o.recipientPhone))}<br>${esc(o.recipientAddress)}</p></div>
+        <div class="box"><h4>🎁 Sending As A Gift To</h4><p><strong>${esc(o.recipientName)}</strong><br>${esc(maskPhone(o.recipientPhone))}${o.recipientEmail ? '<br>' + esc(o.recipientEmail) : ''}<br>${esc(o.recipientAddress)}</p></div>
         ${o.giftMessage ? `<div class="box"><h4>Gift Message</h4><p>${esc(o.giftMessage)}</p></div>` : ''}
       </div>` : ''}
       <table><thead><tr><th>Gift Card</th><th>Value</th><th>Code</th></tr></thead><tbody>${rows}</tbody></table>
@@ -1125,6 +1138,7 @@ router.post('/api/admin/upi-pending/:id/approve', async (req, res, params) => {
       recipientName: pending.gift ? pending.gift.name : null,
       recipientPhone: pending.gift ? pending.gift.phone : null,
       recipientAddress: pending.gift ? pending.gift.address : null,
+      recipientEmail: pending.gift ? pending.gift.email : null,
       giftMessage: pending.gift ? pending.gift.message : null
     };
     await db.createOrder(orderObj, conn);
